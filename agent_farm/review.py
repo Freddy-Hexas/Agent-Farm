@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+import fnmatch
+from pathlib import PurePosixPath
+
+from .models import AgentFarmConfig, ChangedFile, MachineReview, ReviewFinding, TestResult
+
+LOCKFILE_NAMES = {
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "poetry.lock",
+    "Pipfile.lock",
+    "uv.lock",
+    "Cargo.lock",
+    "Gemfile.lock",
+    "composer.lock",
+}
+
+
+def normalize_path(path: str) -> str:
+    return path.replace("\\", "/").strip("/")
+
+
+def path_matches(pattern: str, path: str) -> bool:
+    normalized_pattern = normalize_path(pattern)
+    normalized_path = normalize_path(path)
+    if not normalized_pattern:
+        return False
+
+    has_glob = any(char in normalized_pattern for char in "*?[]")
+    if has_glob:
+        return fnmatch.fnmatchcase(normalized_path, normalized_pattern)
+
+    return normalized_path == normalized_pattern or normalized_path.startswith(
+        normalized_pattern.rstrip("/") + "/"
+    )
+
+
+def is_test_path(path: str) -> bool:
+    normalized = normalize_path(path).lower()
+    name = PurePosixPath(normalized).name
+    return (
+        "/test/" in f"/{normalized}/"
+        or "/tests/" in f"/{normalized}/"
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+        or name.endswith(".test.ts")
+        or name.endswith(".test.tsx")
+        or name.endswith(".spec.ts")
+        or name.endswith(".spec.tsx")
+    )
+
+
+def is_lockfile(path: str) -> bool:
+    return PurePosixPath(normalize_path(path)).name in LOCKFILE_NAMES
+
+
+def count_diff_lines(patch: str) -> int:
+    return sum(1 for line in patch.splitlines() if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+
+
+def run_machine_review(
+    config: AgentFarmConfig,
+    changed_files: list[ChangedFile],
+    patch: str,
+    test_results: list[TestResult],
+    *,
+    worker_ok: bool = True,
+    worker_failure_message: str | None = None,
+) -> MachineReview:
+    findings: list[ReviewFinding] = []
+
+    if not worker_ok:
+        findings.append(
+            ReviewFinding(
+                severity="error",
+                code="worker_failed",
+                message=worker_failure_message or "Codex worker exited unsuccessfully.",
+            )
+        )
+
+    if not changed_files:
+        findings.append(
+            ReviewFinding(
+                severity="error",
+                code="no_changes",
+                message="Worker produced no git diff.",
+            )
+        )
+
+    if len(changed_files) > config.max_changed_files:
+        findings.append(
+            ReviewFinding(
+                severity="error",
+                code="too_many_files",
+                message=f"Changed {len(changed_files)} files; limit is {config.max_changed_files}.",
+            )
+        )
+
+    diff_lines = count_diff_lines(patch)
+    if diff_lines > config.max_diff_lines:
+        findings.append(
+            ReviewFinding(
+                severity="error",
+                code="diff_too_large",
+                message=f"Diff has {diff_lines} changed lines; limit is {config.max_diff_lines}.",
+            )
+        )
+
+    for changed in changed_files:
+        path = changed.review_path
+        if config.allowed_paths and not any(path_matches(pattern, path) for pattern in config.allowed_paths):
+            findings.append(
+                ReviewFinding(
+                    severity="error",
+                    code="outside_allowed_paths",
+                    path=path,
+                    message="Changed file is outside the allowed path set.",
+                )
+            )
+
+        matched_forbidden = next(
+            (pattern for pattern in config.forbidden_paths if path_matches(pattern, path)),
+            None,
+        )
+        if matched_forbidden:
+            findings.append(
+                ReviewFinding(
+                    severity="error",
+                    code="forbidden_path",
+                    path=path,
+                    message=f"Changed file matches forbidden pattern: {matched_forbidden}",
+                )
+            )
+
+        if is_lockfile(path) and not config.allow_lockfiles:
+            findings.append(
+                ReviewFinding(
+                    severity="error",
+                    code="lockfile_changed",
+                    path=path,
+                    message="Lockfile changed but allow_lockfiles is false.",
+                )
+            )
+
+        if changed.status.startswith("D") and is_test_path(path):
+            findings.append(
+                ReviewFinding(
+                    severity="error",
+                    code="deleted_test",
+                    path=path,
+                    message="Worker deleted a test file.",
+                )
+            )
+
+    if not test_results:
+        findings.append(
+            ReviewFinding(
+                severity="warning",
+                code="no_orchestrator_tests",
+                message="No orchestrator test commands were configured.",
+            )
+        )
+    else:
+        for result in test_results:
+            if not result.ok:
+                findings.append(
+                    ReviewFinding(
+                        severity="error",
+                        code="test_failed",
+                        message=f"Check failed: {result.command}",
+                    )
+                )
+
+    status = "failed" if any(f.severity == "error" for f in findings) else "passed"
+    return MachineReview(status=status, findings=findings)

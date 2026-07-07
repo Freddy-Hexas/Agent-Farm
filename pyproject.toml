@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-farm"
+version = "0.1.0"
+description = "A small Codex worker orchestrator using isolated git worktrees."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+agent-farm = "agent_farm.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agent_farm*"]
