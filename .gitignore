@@ -1,4 +1,10 @@
 .agent-farm/
+agent-farm.local.json
+agent-farm.*.local.json
+*.secret.json
+*.secrets.json
+.env
+.env.*
 __pycache__/
 *.py[cod]
 .pytest_cache/

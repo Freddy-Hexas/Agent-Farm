@@ -112,6 +112,14 @@ class MachineReview:
 class AgentFarmConfig:
     codex_binary: str = "codex"
     worker_model: str | None = None
+    worker_provider: str | None = None
+    worker_oss: bool = False
+    worker_local_provider: str | None = None
+    worker_codex_profile: str | None = None
+    worker_codex_profile_v2: str | None = None
+    secrets_env: str | None = ".agent-farm/secrets.env"
+    model_providers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    codex_config_overrides: dict[str, Any] = field(default_factory=dict)
     sandbox: str = "workspace-write"
     approval_policy: str = "never"
     runs_dir: str = ".agent-farm/runs"
@@ -139,6 +147,14 @@ class AgentFarmConfig:
         return {
             "codex_binary": self.codex_binary,
             "worker_model": self.worker_model,
+            "worker_provider": self.worker_provider,
+            "worker_oss": self.worker_oss,
+            "worker_local_provider": self.worker_local_provider,
+            "worker_codex_profile": self.worker_codex_profile,
+            "worker_codex_profile_v2": self.worker_codex_profile_v2,
+            "secrets_env": self.secrets_env,
+            "model_providers": self.model_providers,
+            "codex_config_overrides": self.codex_config_overrides,
             "sandbox": self.sandbox,
             "approval_policy": self.approval_policy,
             "runs_dir": self.runs_dir,

@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import CONFIG_FILE, write_default_config
+from .config import CONFIG_FILE, write_default_config, write_local_templates
 from .orchestrator import cleanup_run, merge_run, prepare_dry_run, review_run, run_task
 
 
@@ -13,6 +13,12 @@ def _add_common_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", type=Path, default=None, help="Config JSON path.")
     parser.add_argument("--base", default="HEAD", help="Base git ref for the worker worktree.")
     parser.add_argument("--model", default=None, help="Worker model passed to Codex.")
+    parser.add_argument("--provider", default=None, help="Worker model provider id from config.")
+    parser.add_argument("--secrets-env", default=None, help="Gitignored env file containing provider API keys.")
+    parser.add_argument("--oss", action="store_true", help="Run Codex with --oss.")
+    parser.add_argument("--local-provider", choices=["ollama", "lmstudio"], default=None, help="Local OSS provider.")
+    parser.add_argument("--codex-profile", default=None, help="Codex user-level profile to select.")
+    parser.add_argument("--codex-profile-v2", default=None, help="Codex profile-v2 config layer to select.")
     parser.add_argument("--allow", action="append", default=None, help="Allowed path or glob. Repeatable.")
     parser.add_argument("--forbid", action="append", default=None, help="Forbidden path or glob. Repeatable.")
     parser.add_argument("--test-cmd", action="append", default=None, help="Check command rerun by orchestrator. Repeatable.")
@@ -26,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init", help="Write a default config file.")
     init_parser.add_argument("--path", type=Path, default=Path(CONFIG_FILE), help="Config path to create.")
     init_parser.add_argument("--force", action="store_true", help="Overwrite an existing config.")
+
+    local_parser = subparsers.add_parser("init-local", help="Write gitignored local provider templates.")
+    local_parser.add_argument("--config-path", type=Path, default=Path("agent-farm.local.json"), help="Local config path.")
+    local_parser.add_argument("--secrets-path", type=Path, default=Path(".agent-farm/secrets.env"), help="Secrets env path.")
+    local_parser.add_argument("--force", action="store_true", help="Overwrite existing local files.")
 
     run_parser = subparsers.add_parser("run", help="Run one Codex worker in an isolated worktree.")
     run_parser.add_argument("--task", type=Path, required=True, help="Markdown task spec for the worker.")
@@ -90,7 +101,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"created {args.path}")
             return 0
 
+        if args.command == "init-local":
+            write_local_templates(
+                config_path=args.config_path,
+                secrets_path=args.secrets_path,
+                force=args.force,
+            )
+            print(f"created {args.config_path}")
+            print(f"created {args.secrets_path}")
+            return 0
+
         if args.command == "run":
+            worker_oss = True if args.oss else None
             if args.dry_run:
                 prompt = prepare_dry_run(
                     repo=args.repo,
@@ -102,6 +124,12 @@ def main(argv: list[str] | None = None) -> int:
                     test_commands=args.test_cmd,
                     timeout_seconds=args.timeout,
                     model=args.model,
+                    provider=args.provider,
+                    secrets_env=args.secrets_env,
+                    worker_oss=worker_oss,
+                    local_provider=args.local_provider,
+                    codex_profile=args.codex_profile,
+                    codex_profile_v2=args.codex_profile_v2,
                 )
                 print(prompt)
                 return 0
@@ -116,6 +144,12 @@ def main(argv: list[str] | None = None) -> int:
                 test_commands=args.test_cmd,
                 timeout_seconds=args.timeout,
                 model=args.model,
+                provider=args.provider,
+                secrets_env=args.secrets_env,
+                worker_oss=worker_oss,
+                local_provider=args.local_provider,
+                codex_profile=args.codex_profile,
+                codex_profile_v2=args.codex_profile_v2,
             )
             print_run_summary(result)
             return 0

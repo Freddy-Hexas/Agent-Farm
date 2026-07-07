@@ -42,6 +42,12 @@ def _merge_overrides(
     test_commands: list[str] | None = None,
     timeout_seconds: int | None = None,
     model: str | None = None,
+    provider: str | None = None,
+    secrets_env: str | None = None,
+    worker_oss: bool | None = None,
+    local_provider: str | None = None,
+    codex_profile: str | None = None,
+    codex_profile_v2: str | None = None,
 ) -> AgentFarmConfig:
     data = config.to_json()
     if allowed_paths:
@@ -54,6 +60,18 @@ def _merge_overrides(
         data["timeout_seconds"] = timeout_seconds
     if model is not None:
         data["worker_model"] = model
+    if provider is not None:
+        data["worker_provider"] = provider
+    if secrets_env is not None:
+        data["secrets_env"] = secrets_env
+    if worker_oss is not None:
+        data["worker_oss"] = worker_oss
+    if local_provider is not None:
+        data["worker_local_provider"] = local_provider
+    if codex_profile is not None:
+        data["worker_codex_profile"] = codex_profile
+    if codex_profile_v2 is not None:
+        data["worker_codex_profile_v2"] = codex_profile_v2
     return AgentFarmConfig.from_dict(data)
 
 
@@ -123,6 +141,12 @@ def prepare_dry_run(
     test_commands: list[str] | None = None,
     timeout_seconds: int | None = None,
     model: str | None = None,
+    provider: str | None = None,
+    secrets_env: str | None = None,
+    worker_oss: bool | None = None,
+    local_provider: str | None = None,
+    codex_profile: str | None = None,
+    codex_profile_v2: str | None = None,
 ) -> str:
     repo_root = find_repo_root(repo)
     config = _merge_overrides(
@@ -132,6 +156,12 @@ def prepare_dry_run(
         test_commands=test_commands,
         timeout_seconds=timeout_seconds,
         model=model,
+        provider=provider,
+        secrets_env=secrets_env,
+        worker_oss=worker_oss,
+        local_provider=local_provider,
+        codex_profile=codex_profile,
+        codex_profile_v2=codex_profile_v2,
     )
     base_commit = resolve_ref(repo_root, base_ref)
     task_spec = read_task_spec(task_file)
@@ -149,6 +179,12 @@ def run_task(
     test_commands: list[str] | None = None,
     timeout_seconds: int | None = None,
     model: str | None = None,
+    provider: str | None = None,
+    secrets_env: str | None = None,
+    worker_oss: bool | None = None,
+    local_provider: str | None = None,
+    codex_profile: str | None = None,
+    codex_profile_v2: str | None = None,
 ) -> dict[str, Any]:
     repo_root = find_repo_root(repo)
     config = _merge_overrides(
@@ -158,6 +194,12 @@ def run_task(
         test_commands=test_commands,
         timeout_seconds=timeout_seconds,
         model=model,
+        provider=provider,
+        secrets_env=secrets_env,
+        worker_oss=worker_oss,
+        local_provider=local_provider,
+        codex_profile=codex_profile,
+        codex_profile_v2=codex_profile_v2,
     )
     base_commit = resolve_ref(repo_root, base_ref)
     task_id = make_task_id(task_file)

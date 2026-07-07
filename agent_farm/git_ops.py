@@ -46,10 +46,12 @@ def remove_worktree(repo: Path, worktree: Path, *, force: bool = False) -> None:
 
 
 def collect_patch(worktree: Path) -> str:
+    mark_untracked_for_diff(worktree)
     return git(worktree, ["diff", "--binary", "--no-ext-diff"]).stdout
 
 
 def collect_changed_files(worktree: Path) -> list[ChangedFile]:
+    mark_untracked_for_diff(worktree)
     output = git(worktree, ["diff", "--name-status", "-z", "--no-ext-diff"]).stdout
     if not output:
         return []
@@ -70,6 +72,17 @@ def collect_changed_files(worktree: Path) -> list[ChangedFile]:
             index += 1
             files.append(ChangedFile(status=status, path=path))
     return files
+
+
+def _split_nul_paths(output: str) -> list[str]:
+    return [part for part in output.split("\0") if part]
+
+
+def mark_untracked_for_diff(worktree: Path) -> None:
+    output = git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout
+    paths = _split_nul_paths(output)
+    if paths:
+        git(worktree, ["add", "-N", "--", *paths])
 
 
 def apply_patch(repo: Path, patch_file: Path) -> None:

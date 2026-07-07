@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_farm.config import CONFIG_FILE, load_config, write_default_config
+from agent_farm.config import CONFIG_FILE, LOCAL_CONFIG_FILE, load_config, write_default_config
 
 
 class ConfigTests(unittest.TestCase):
@@ -21,6 +21,18 @@ class ConfigTests(unittest.TestCase):
             path.write_text(json.dumps({"surprise": True}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_config(Path(tmp), path)
+
+    def test_loads_gitignored_local_config_over_public_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / CONFIG_FILE).write_text(json.dumps({"worker_model": "public"}), encoding="utf-8")
+            (root / LOCAL_CONFIG_FILE).write_text(
+                json.dumps({"worker_model": "local", "worker_provider": "proxy"}),
+                encoding="utf-8",
+            )
+            config = load_config(root)
+        self.assertEqual(config.worker_model, "local")
+        self.assertEqual(config.worker_provider, "proxy")
 
 
 if __name__ == "__main__":

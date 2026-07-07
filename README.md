@@ -70,6 +70,17 @@ cheap model + Codex CLI + tools + sandbox + worktree + diff review
 python -m agent_farm init
 ```
 
+初始化本机私有模型配置：
+
+```powershell
+python -m agent_farm init-local
+```
+
+这会创建两个不会提交到 GitHub 的文件：
+
+- `agent-farm.local.json`：填写 worker 使用哪个模型、哪个 provider、endpoint 地址。
+- `.agent-farm/secrets.env`：填写 API key 等本机密钥。
+
 编写任务规格，例如 `task.md`：
 
 ```markdown
@@ -115,6 +126,96 @@ python -m agent_farm cleanup --run .\.agent-farm\runs\<task-id>
 - Git with worktree support.
 - Codex CLI available as `codex`.
 - A git repository with at least one commit. Git cannot create a worktree from an unborn branch.
+
+## Worker 模型接入
+
+Agent Farm 现在支持给 worker 指定不同的终端模型。配置分两层：
+
+1. 可提交的公共配置：`agent-farm.config.json`。
+2. 不提交的本机私有配置：`agent-farm.local.json` 和 `.agent-farm/secrets.env`。
+
+不要把 API key 写进 `agent-farm.config.json`。真实密钥只放在 `.agent-farm/secrets.env`，这个路径已经在 `.gitignore` 里。
+
+### 方式 A: Responses-compatible Endpoint
+
+运行：
+
+```powershell
+python -m agent_farm init-local
+```
+
+然后编辑 `agent-farm.local.json`：
+
+```json
+{
+  "worker_model": "your-worker-model",
+  "worker_provider": "my-provider",
+  "secrets_env": ".agent-farm/secrets.env",
+  "model_providers": {
+    "my-provider": {
+      "name": "My Responses-compatible endpoint",
+      "base_url": "https://api.example.com/v1",
+      "env_key": "AGENT_FARM_WORKER_API_KEY",
+      "wire_api": "responses"
+    }
+  }
+}
+```
+
+你要填的是：
+
+- `worker_model`：模型名，例如供应商给你的模型 ID。
+- `worker_provider`：provider 名字，要和 `model_providers` 里的 key 一致。
+- `base_url`：模型 endpoint 地址。
+- `env_key`：环境变量名，不是 API key 本体。
+
+然后编辑 `.agent-farm/secrets.env`：
+
+```env
+AGENT_FARM_WORKER_API_KEY=你的真实APIKey
+```
+
+运行 worker：
+
+```powershell
+python -m agent_farm run --task .\task.md --allow src --test-cmd "python -m unittest discover"
+```
+
+也可以临时覆盖模型和 provider：
+
+```powershell
+python -m agent_farm run --task .\task.md --model your-worker-model --provider my-provider
+```
+
+### 方式 B: Ollama / LM Studio 本地模型
+
+如果用 Codex CLI 的本地 OSS provider：
+
+```powershell
+python -m agent_farm run --task .\task.md --oss --local-provider ollama --model gpt-oss:20b
+```
+
+或者：
+
+```powershell
+python -m agent_farm run --task .\task.md --oss --local-provider lmstudio --model your-local-model
+```
+
+### 方式 C: Codex User Profile
+
+如果你已经在 `~/.codex/config.toml` 或 `$CODEX_HOME/<profile>.config.toml` 配好了 provider，可以直接让 worker 使用 Codex profile：
+
+```powershell
+python -m agent_farm run --task .\task.md --codex-profile cheap-worker
+```
+
+或者：
+
+```powershell
+python -m agent_farm run --task .\task.md --codex-profile-v2 cheap-worker
+```
+
+Codex 官方要求 provider、auth、`model_provider`、`model_providers` 这类机器本地配置放在 user-level config 或命令行覆盖里，不应该放进项目级 `.codex/config.toml`。Agent Farm 因此选择用 gitignored local config 和 `codex exec -c ...` 来传递 worker provider。
 
 ## Run Artifacts
 

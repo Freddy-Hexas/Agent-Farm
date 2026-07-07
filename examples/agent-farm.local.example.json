@@ -1,0 +1,13 @@
+{
+  "worker_model": "your-worker-model",
+  "worker_provider": "my-provider",
+  "secrets_env": ".agent-farm/secrets.env",
+  "model_providers": {
+    "my-provider": {
+      "name": "My Responses-compatible endpoint",
+      "base_url": "https://api.example.com/v1",
+      "env_key": "AGENT_FARM_WORKER_API_KEY",
+      "wire_api": "responses"
+    }
+  }
+}

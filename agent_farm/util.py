@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .models import CommandResult
 
@@ -15,6 +15,7 @@ def run_command(
     timeout_seconds: int | None = None,
     input_text: str | None = None,
     shell: bool = False,
+    env: Mapping[str, str] | None = None,
 ) -> CommandResult:
     try:
         completed = subprocess.run(
@@ -23,8 +24,11 @@ def run_command(
             input=input_text,
             text=True,
             capture_output=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_seconds,
             shell=shell,
+            env=dict(env) if env is not None else None,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
