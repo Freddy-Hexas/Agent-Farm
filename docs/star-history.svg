@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480" role="img" aria-labelledby="title description">
+  <title id="title">Freddy-Hexas/Agent-Farm GitHub star history</title>
+  <desc id="description">Daily aggregate GitHub star counts tracked since 2026-07-31. The latest count is 0.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1117" />
+      <stop offset="100%" stop-color="#161b22" />
+    </linearGradient>
+    <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.34" />
+      <stop offset="100%" stop-color="#58a6ff" stop-opacity="0.02" />
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+  </defs>
+  <style>
+    text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .title { fill: #f0f6fc; font-size: 24px; font-weight: 700; }
+    .subtitle { fill: #8b949e; font-size: 14px; }
+    .count { fill: #f0f6fc; font-size: 31px; font-weight: 750; }
+    .count-label { fill: #8b949e; font-size: 12px; letter-spacing: 0.08em; }
+    .axis { fill: #8b949e; font-size: 12px; }
+    .grid { stroke: #30363d; stroke-width: 1; }
+  </style>
+  <rect x="1" y="1" width="958" height="478" rx="16" fill="url(#background)" stroke="#30363d" />
+  <text x="76" y="45" class="title">GitHub Star History</text>
+  <text x="76" y="70" class="subtitle">Freddy-Hexas/Agent-Farm · tracked daily from 2026-07-31</text>
+  <text x="918" y="43" class="count" text-anchor="end">★ 0</text>
+  <text x="918" y="65" class="count-label" text-anchor="end">CURRENT STARS</text>
+  <line x1="76" y1="406.00" x2="918" y2="406.00" class="grid" /><text x="62" y="411.00" class="axis" text-anchor="end">0</text><line x1="76" y1="330.50" x2="918" y2="330.50" class="grid" /><text x="62" y="335.50" class="axis" text-anchor="end">1</text><line x1="76" y1="255.00" x2="918" y2="255.00" class="grid" /><text x="62" y="260.00" class="axis" text-anchor="end">2</text><line x1="76" y1="179.50" x2="918" y2="179.50" class="grid" /><text x="62" y="184.50" class="axis" text-anchor="end">3</text><line x1="76" y1="104.00" x2="918" y2="104.00" class="grid" /><text x="62" y="109.00" class="axis" text-anchor="end">4</text>
+  <!-- Area fill appears after the second daily sample. -->
+  <path d="M 497.00 406.00" fill="none" stroke="#58a6ff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" />
+  <circle cx="497.00" cy="406.00" r="5" fill="#0d1117" stroke="#79c0ff" stroke-width="3" />
+  <text x="76" y="440" class="axis" text-anchor="start">2026-07-31</text>
+  <text x="480.0" y="456" class="subtitle" text-anchor="middle">Daily aggregate counts · no Stargazer identities are collected</text>
+</svg>

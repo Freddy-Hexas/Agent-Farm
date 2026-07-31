@@ -1,0 +1,52 @@
+name: Update star history
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: star-history-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'Freddy-Hexas/Agent-Farm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Record the current aggregate star count
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python scripts/update_star_history.py
+          --repository "${{ github.repository }}"
+
+      - name: Commit an updated chart
+        shell: bash
+        run: |
+          if git diff --quiet -- docs/star-history.json docs/star-history.svg; then
+            echo "The daily star sample is already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/star-history.json docs/star-history.svg
+          git commit -m "chore: update star history"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

@@ -310,7 +310,7 @@ python -m pip install -e ".[desktop,build]"
 python -m unittest discover -s tests -v
 ```
 
-The `0.4.6` release passes 89 automated tests covering configuration, secrets, provider catalogs,
+The `0.4.6` codebase passes 92 automated tests covering configuration, secrets, provider catalogs,
 model protocol translation, the native tool loop, worktree isolation, machine review, Supervisor
 planning, collaborative synthesis, desktop runtime behavior, HTTP endpoints, and UI contracts.
 
@@ -424,3 +424,15 @@ Issues and focused pull requests are welcome. Before submitting a change:
 ## License
 
 Agent Farm is released under the [MIT License](LICENSE).
+
+## Star History
+
+<p align="center">
+  <a href="https://github.com/Freddy-Hexas/Agent-Farm/stargazers">
+    <img src="docs/star-history.svg" alt="Agent Farm GitHub star history" width="960">
+  </a>
+</p>
+
+<p align="center">
+  <sub>Updated daily from aggregate GitHub star counts. No Stargazer identities are collected.</sub>
+</p>
