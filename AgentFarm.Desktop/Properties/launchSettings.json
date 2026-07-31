@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "AgentFarm.Desktop (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "AgentFarm.Desktop (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

@@ -4,14 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-farm"
-version = "0.1.0"
-description = "A small Codex worker orchestrator using isolated git worktrees."
+version = "0.4.6"
+description = "A native multi-model autonomous agent desktop app using isolated git worktrees."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pypdf>=6,<7"]
+
+[project.optional-dependencies]
+desktop = ["pywebview>=6.2,<7"]
+build = ["pyinstaller>=6.10,<7", "pillow>=12,<13"]
 
 [project.scripts]
 agent-farm = "agent_farm.cli:main"
+agent-farm-desktop = "agent_farm.desktop:main"
 
 [tool.setuptools.packages.find]
 include = ["agent_farm*"]
+
+[tool.setuptools.package-data]
+agent_farm = ["web/*.html", "web/*.css", "web/*.js"]

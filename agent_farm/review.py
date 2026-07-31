@@ -24,14 +24,17 @@ def normalize_path(path: str) -> str:
 
 
 def path_matches(pattern: str, path: str) -> bool:
-    normalized_pattern = normalize_path(pattern)
-    normalized_path = normalize_path(path)
+    normalized_pattern = normalize_path(pattern).casefold()
+    normalized_path = normalize_path(path).casefold()
     if not normalized_pattern:
         return False
 
     has_glob = any(char in normalized_pattern for char in "*?[]")
     if has_glob:
-        return fnmatch.fnmatchcase(normalized_path, normalized_pattern)
+        patterns = [normalized_pattern]
+        if normalized_pattern.startswith("**/"):
+            patterns.append(normalized_pattern[3:])
+        return any(fnmatch.fnmatchcase(normalized_path, candidate) for candidate in patterns)
 
     return normalized_path == normalized_pattern or normalized_path.startswith(
         normalized_pattern.rstrip("/") + "/"
@@ -77,7 +80,7 @@ def run_machine_review(
             ReviewFinding(
                 severity="error",
                 code="worker_failed",
-                message=worker_failure_message or "Codex worker exited unsuccessfully.",
+                message=worker_failure_message or "Worker agent exited unsuccessfully.",
             )
         )
 
@@ -110,31 +113,37 @@ def run_machine_review(
         )
 
     for changed in changed_files:
+        review_paths = [changed.review_path]
+        if changed.old_path and changed.old_path not in review_paths:
+            review_paths.append(changed.old_path)
+        for path in review_paths:
+            if config.allowed_paths and not any(
+                path_matches(pattern, path) for pattern in config.allowed_paths
+            ):
+                findings.append(
+                    ReviewFinding(
+                        severity="error",
+                        code="outside_allowed_paths",
+                        path=path,
+                        message="Changed file is outside the allowed path set.",
+                    )
+                )
+
+            matched_forbidden = next(
+                (pattern for pattern in config.forbidden_paths if path_matches(pattern, path)),
+                None,
+            )
+            if matched_forbidden:
+                findings.append(
+                    ReviewFinding(
+                        severity="error",
+                        code="forbidden_path",
+                        path=path,
+                        message=f"Changed file matches forbidden pattern: {matched_forbidden}",
+                    )
+                )
+
         path = changed.review_path
-        if config.allowed_paths and not any(path_matches(pattern, path) for pattern in config.allowed_paths):
-            findings.append(
-                ReviewFinding(
-                    severity="error",
-                    code="outside_allowed_paths",
-                    path=path,
-                    message="Changed file is outside the allowed path set.",
-                )
-            )
-
-        matched_forbidden = next(
-            (pattern for pattern in config.forbidden_paths if path_matches(pattern, path)),
-            None,
-        )
-        if matched_forbidden:
-            findings.append(
-                ReviewFinding(
-                    severity="error",
-                    code="forbidden_path",
-                    path=path,
-                    message=f"Changed file matches forbidden pattern: {matched_forbidden}",
-                )
-            )
-
         if is_lockfile(path) and not config.allow_lockfiles:
             findings.append(
                 ReviewFinding(

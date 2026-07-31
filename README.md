@@ -1,295 +1,426 @@
 # Agent Farm
 
-Agent Farm 是一个面向 Codex 的本地 worker orchestrator。它的目标不是重新发明一个 coding agent，而是在 Codex CLI 已有的 agent loop、文件编辑、shell 执行、sandbox 和 git diff 能力之上，补上一层更适合多 worker 协作的调度、隔离、证据收集和审查流程。
+**One expensive brain. Many economical hands.**
 
-一句话概括：
+Agent Farm is a Windows desktop application for autonomous multi-agent work. A high-capability
+**Supervisor** understands the request, creates a bounded plan, routes each task to an independent
+**Worker**, reviews the evidence, and produces the final result. Workers can use substantially less
+expensive models than the Supervisor.
 
-```text
-高级 Codex 负责拆任务、审查和合并；
-低成本 Codex worker 在隔离 worktree 里完成局部实现；
-Agent Farm 负责调度、记录、测试、机器审查和 patch 管理。
-```
+[![Version](https://img.shields.io/badge/version-0.4.6-blue)](https://github.com/Freddy-Hexas/Agent-Farm/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](https://github.com/Freddy-Hexas/Agent-Farm/releases)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## 项目目的
+> [!IMPORTANT]
+> Agent Farm is an active preview. The signed MSIX is usable today, but the one-click installation
+> experience is still being optimized. The current preview uses a development signing certificate,
+> so first-time installation requires importing the included `.cer` certificate before opening the
+> MSIX. Production signing, smoother prerequisite handling, and a true one-click installer are on
+> the roadmap.
 
-当前很多 agent 工作流的问题不在于模型不会写代码，而在于缺少工程边界：
+## Why Agent Farm exists
 
-- worker 直接污染主工作区；
-- 低价模型改动范围失控；
-- 审查依赖 worker 自述，而不是 diff 和测试证据；
-- 多 worker 并行时缺少状态机、日志和可回滚产物；
-- 成本控制只停留在“换便宜模型”，没有任务拆分和验收制度。
+Most agent products use one model for every step. That is convenient, but expensive: repository
+exploration, web research, mechanical edits, test execution, and final judgment do not all require
+the same model capability.
 
-Agent Farm 要解决的是这些工程化问题。它把便宜模型放进 Codex harness 里，让 worker 仍然具备读代码、改代码、跑命令、产出 diff 的能力，同时用独立 git worktree 和机器审查把风险关在可控范围内。
-
-## 项目内容
-
-当前 MVP 包含一个单 worker 工作流：
-
-1. 读取 supervisor 编写的任务规格。
-2. 基于指定 base commit 创建独立 git worktree。
-3. 使用 `codex exec` 启动一个 Codex worker。
-4. worker 在隔离 worktree 中读代码、改代码、跑局部验证。
-5. orchestrator 收集 worker 产生的 `git diff`、日志和最终报告。
-6. orchestrator 重新运行配置好的测试命令。
-7. 机器审查检查 forbidden paths、allowed paths、diff 大小、测试结果、lockfile 变更和删除测试等风险。
-8. 只有通过机器审查后，supervisor 才能显式执行 merge。
-
-核心模块：
-
-- `agent_farm/cli.py`：命令行入口。
-- `agent_farm/orchestrator.py`：任务状态流、worktree 生命周期、worker 调用和 merge 流程。
-- `agent_farm/codex_worker.py`：`codex exec` 参数构造与进程执行。
-- `agent_farm/review.py`：机器审查规则。
-- `agent_farm/git_ops.py`：git worktree、diff、patch apply 等操作。
-- `tests/`：机器审查和配置加载的基础测试。
-
-## 项目意义
-
-Agent Farm 的核心价值是把“多模型协作”变成“多 agent 工程流程”。
-
-它强调的不是让便宜模型裸跑，而是让便宜模型继续运行在 Codex 的工作范式里：
+Agent Farm makes the cost boundary explicit:
 
 ```text
-cheap model + Codex CLI + tools + sandbox + worktree + diff review
+User request
+    |
+    v
+High-capability Supervisor
+    |  understand, decompose, route, review, synthesize
+    |
+    +----> Economical Worker A ----> isolated worktree ----> artifact + evidence
+    +----> Economical Worker B ----> isolated worktree ----> artifact + evidence
+    +----> Local Worker C ---------> isolated worktree ----> artifact + evidence
+    |
+    v
+Machine review gates
+    |
+    v
+Supervisor decision or final synthesis
 ```
 
-这样可以形成更清晰的分工：
+The Supervisor may use a premium model, while Workers independently use DeepSeek, Qwen, Kimi,
+OpenRouter models, local Ollama models, or any OpenAI-compatible endpoint. Model routes are visible
+and editable; Agent Farm never silently replaces the selected Worker provider with the Supervisor
+provider.
 
-- 高级模型负责理解需求、拆分任务、判断风险和最终审查。
-- 便宜模型负责局部、可测试、可回滚的实现工作。
-- orchestrator 负责工作区隔离、预算边界、证据收集和机器 gate。
+## What is implemented
 
-这使得未来的 Codex workflow 可以更接近真实软件团队：有人拆任务，有人实现，有人审查，有测试和日志，有明确的合并权限。
+### Native Windows desktop application
 
-## Quick Start
+- Native WinUI 3 shell with Windows App SDK.
+- Taskbar-safe startup maximization and native window controls.
+- Persistent project threads and task history.
+- Settings, Agents, Providers, Runs, and evidence views.
+- Local loopback backend owned by the desktop process.
+- Release builds include a frozen Python backend and do not require a system Python installation.
+- Debug builds start the Python backend directly from source for fast iteration.
 
-初始化配置：
+### Real multi-agent orchestration
+
+- A high-capability Supervisor creates validated Worker Plans.
+- Every Worker selects an explicit named model profile.
+- Workers run concurrently up to a configured limit.
+- Every Worker receives an independent Git worktree.
+- Workers can inspect files, search code, edit bounded paths, and run verification commands.
+- Research Workers can use opt-in public web search and bounded page/PDF extraction.
+- Collaborative tasks can combine every passing Worker artifact into one final deliverable.
+- Typed JSONL events preserve messages, tool calls, results, usage, and failures.
+
+### Review and safety boundaries
+
+- `allowed_paths` restrict where a Worker may write.
+- `forbidden_paths` protect secrets, Git metadata, CI workflows, and other sensitive paths.
+- Commands are executed through a bounded no-shell runner.
+- Worker changes are collected as patches before any Supervisor decision.
+- Machine review checks path scope, changed-file count, diff size, lockfiles, test deletion, and
+  configured verification commands.
+- Provider credentials are stored locally and never returned by the Settings API.
+- Network tools are disabled unless network access is explicitly enabled.
+- Workers cannot push, deploy, change permissions, or silently modify the Supervisor workspace.
+
+### Provider-aware model routing
+
+Agent Farm includes templates for the following providers and runtimes:
+
+| Category | Providers |
+| --- | --- |
+| Direct providers | OpenAI, Anthropic Claude, Google Gemini, xAI, Mistral AI |
+| China-region providers | DeepSeek, Kimi, Alibaba Cloud Qwen, Zhipu GLM, Volcengine Ark / Doubao |
+| Model gateways | SiliconFlow, OpenRouter, GroqCloud, Together AI, Fireworks AI |
+| Local runtimes | Ollama, LM Studio |
+| Custom | Any OpenAI-compatible Chat Completions or Responses endpoint |
+
+Official templates load the compatible model catalog available to the configured API key and show
+the models as a dropdown. Custom OpenAI-compatible routes retain a manual Model ID field.
+
+Reasoning controls are provider-aware. Agent Farm does not show OpenAI-only effort values for a
+provider that does not support them. For example, the DeepSeek route uses its supported thinking
+control and `high` / `max` effort values rather than OpenAI's `xhigh` UI.
+
+## Architecture
+
+```text
+AgentFarm.Desktop (WinUI 3)
+    |
+    +-- WebView2 workspace UI
+    +-- native title bar and window lifecycle
+    +-- starts/stops the local backend
+    |
+    v
+Loopback product API
+    |
+    +-- thread store
+    +-- settings and secret store
+    +-- provider catalog discovery
+    +-- Supervisor planning and review
+    +-- farm scheduler
+    |
+    v
+Native agent runtime
+    |
+    +-- Responses API client
+    +-- Chat Completions client
+    +-- repository and web tools
+    +-- per-Worker Git worktrees
+    +-- event logs, patches, tests, and machine review
+```
+
+The frontend does not contain a mock agent. Buttons in the desktop workspace call the same backend
+used by the CLI, and Settings updates are applied to subsequent runs.
+
+## Installation on Windows
+
+### Requirements
+
+- Windows 10 version 1809 or newer; Windows 11 is recommended.
+- x64 processor for the current release package.
+- Git installed and available on `PATH`.
+- At least one model provider API key, unless all selected routes use local runtimes.
+- Microsoft Windows App Runtime 2.3. Windows may install the dependency automatically; dependency
+  handling will be improved as part of the one-click installer work.
+
+### Install the current preview
+
+1. Open the [latest GitHub Release](https://github.com/Freddy-Hexas/Agent-Farm/releases/latest).
+2. Download:
+   - `AgentFarm-Native-0.4.6.0-x64.msix`
+   - `AgentFarm-dev.cer`
+3. Import `AgentFarm-dev.cer` into the current user's **Trusted People** certificate store.
+4. Double-click `AgentFarm-Native-0.4.6.0-x64.msix` and select **Install**.
+5. Launch **Agent Farm** from the Start menu.
+
+You can import the certificate with PowerShell instead of the certificate wizard:
 
 ```powershell
-python -m agent_farm init
+Import-Certificate `
+  -FilePath .\AgentFarm-dev.cer `
+  -CertStoreLocation Cert:\CurrentUser\TrustedPeople
 ```
 
-初始化本机私有模型配置：
+The certificate is a development certificate for preview distribution. Inspect the certificate and
+package before trusting them. The MSIX is signed with publisher `CN=Agent Farm`.
 
-```powershell
-python -m agent_farm init-local
+> [!NOTE]
+> The current package is an upgradeable MSIX, but installation is not yet the final one-click
+> experience. We are actively optimizing certificate trust, runtime dependency installation,
+> package size, update delivery, and production code signing.
+
+## First run
+
+1. Open Agent Farm and select a Git repository when prompted.
+2. Open **Settings → Providers**.
+3. Add a provider template and enter its API key. API keys are write-only in the UI.
+4. Open **Settings → Agents**.
+5. Select the premium Supervisor provider and model.
+6. Add or edit one or more Worker routes, then select their provider and model from the catalog.
+7. Return to the workspace, describe the desired outcome, and start the task.
+8. Follow the plan, Worker activity, evidence, and final deliverable from the same thread.
+
+A typical cost-conscious configuration is:
+
+```text
+Supervisor: premium reasoning model
+Worker A:   DeepSeek V4 Flash
+Worker B:   another economical hosted model
+Worker C:   optional local Ollama or LM Studio model
 ```
 
-这会创建两个不会提交到 GitHub 的文件：
+## How a task runs
 
-- `agent-farm.local.json`：填写 worker 使用哪个模型、哪个 provider、endpoint 地址。
-- `.agent-farm/secrets.env`：填写 API key 等本机密钥。
+1. **Plan** — the Supervisor inspects the request and creates a structured Worker Plan.
+2. **Validate** — Agent Farm rejects duplicate Worker IDs, unknown profiles, unsafe paths, or an
+   invalid deliverable location.
+3. **Isolate** — one Git worktree is created for each Worker from the same base commit.
+4. **Execute** — Workers use their assigned providers and models to perform bounded work.
+5. **Collect** — Agent Farm records the patch, changed files, tests, final report, and typed events.
+6. **Review** — deterministic machine rules reject unsafe or out-of-scope changes.
+7. **Decide or synthesize** — the Supervisor reviews passing evidence and either selects a result or
+   combines all passing Worker artifacts into a final deliverable.
 
-编写任务规格，例如 `task.md`：
+Web research is deliberately finite. Research Workers receive a hard tool-call budget and a turn
+deadline, after which web tools are removed and the Worker is instructed to write and verify the
+requested artifact. This prevents inexpensive models from browsing indefinitely without producing
+a result.
 
-```markdown
-# Task
+## Local configuration
 
-Add rate limiting to the login endpoint.
-
-Allowed scope:
-- auth/login code
-- auth tests
-
-Acceptance:
-- existing auth tests pass
-- add a test for repeated failed login attempts
-```
-
-启动一个 worker：
-
-```powershell
-python -m agent_farm run --task .\task.md --model gpt-5-mini --allow src/auth --allow tests/auth --test-cmd "python -m unittest discover"
-```
-
-查看运行结果：
-
-```powershell
-python -m agent_farm review --run .\.agent-farm\runs\<task-id>
-```
-
-审查通过后应用 patch：
-
-```powershell
-python -m agent_farm merge --run .\.agent-farm\runs\<task-id> --yes
-```
-
-清理 worker worktree：
-
-```powershell
-python -m agent_farm cleanup --run .\.agent-farm\runs\<task-id>
-```
-
-## Requirements
-
-- Git with worktree support.
-- Codex CLI available as `codex`.
-- A git repository with at least one commit. Git cannot create a worktree from an unborn branch.
-
-## Worker 模型接入
-
-Agent Farm 现在支持给 worker 指定不同的终端模型。配置分两层：
-
-1. 可提交的公共配置：`agent-farm.config.json`。
-2. 不提交的本机私有配置：`agent-farm.local.json` 和 `.agent-farm/secrets.env`。
-
-不要把 API key 写进 `agent-farm.config.json`。真实密钥只放在 `.agent-farm/secrets.env`，这个路径已经在 `.gitignore` 里。
-
-### 方式 A: Responses-compatible Endpoint
-
-运行：
-
-```powershell
-python -m agent_farm init-local
-```
-
-然后编辑 `agent-farm.local.json`：
+The desktop Settings UI is recommended, but the same routes can be configured in
+`agent-farm.local.json`. This file is intentionally ignored by Git.
 
 ```json
 {
-  "worker_model": "your-worker-model",
-  "worker_provider": "my-provider",
-  "secrets_env": ".agent-farm/secrets.env",
+  "agent_backend": "native",
+  "supervisor_provider": "openai-main",
+  "supervisor_model": "your-premium-model",
+  "default_worker_profile": "cheap",
+  "max_parallel_workers": 2,
   "model_providers": {
-    "my-provider": {
-      "name": "My Responses-compatible endpoint",
-      "base_url": "https://api.example.com/v1",
-      "env_key": "AGENT_FARM_WORKER_API_KEY",
+    "openai-main": {
+      "template_id": "openai",
+      "name": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
       "wire_api": "responses"
+    },
+    "deepseek": {
+      "template_id": "deepseek",
+      "name": "DeepSeek",
+      "base_url": "https://api.deepseek.com",
+      "env_key": "DEEPSEEK_API_KEY",
+      "wire_api": "chat"
     }
+  },
+  "worker_profiles": {
+    "cheap": {
+      "display_name": "DeepSeek Worker",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "reasoning_mode": "enabled",
+      "timeout_seconds": 1200
+    }
+  },
+  "codex_config_overrides": {
+    "sandbox_workspace_write.network_access": true
   }
 }
 ```
 
-你要填的是：
+Store real credentials only in `.agent-farm/secrets.env` or the process environment:
 
-- `worker_model`：模型名，例如供应商给你的模型 ID。
-- `worker_provider`：provider 名字，要和 `model_providers` 里的 key 一致。
-- `base_url`：模型 endpoint 地址。
-- `env_key`：环境变量名，不是 API key 本体。
-
-然后编辑 `.agent-farm/secrets.env`：
-
-```env
-AGENT_FARM_WORKER_API_KEY=你的真实APIKey
+```dotenv
+OPENAI_API_KEY=replace-with-your-key
+DEEPSEEK_API_KEY=replace-with-your-key
 ```
 
-运行 worker：
+Never commit `agent-farm.local.json`, `.agent-farm/secrets.env`, `.env`, or real API keys.
+
+## Command-line interface
+
+The desktop app is the primary interface, but the CLI remains useful for automation and debugging.
 
 ```powershell
-python -m agent_farm run --task .\task.md --allow src --test-cmd "python -m unittest discover"
+# Initialize public and local configuration templates
+python -m agent_farm init
+python -m agent_farm init-local
+
+# Start the browser-based local console
+python -m agent_farm ui --repo .
+
+# Start the compatibility desktop launcher
+python -m agent_farm desktop --repo .
+
+# Run a validated multi-Worker plan
+python -m agent_farm farm-run `
+  --repo . `
+  --plan .\worker-plan.json `
+  --config .\agent-farm.local.json
+
+# Inspect the aggregate review package
+python -m agent_farm farm-review --farm .\.agent-farm\farms\<farm-id>
 ```
 
-也可以临时覆盖模型和 provider：
+Run `python -m agent_farm --help` to see the single-Worker review, merge, cleanup, and farm decision
+commands.
+
+## Development
+
+### Prerequisites
+
+- Python 3.11 or newer.
+- .NET 10 SDK.
+- Windows App SDK / WinUI 3 build dependencies.
+- Microsoft WinApp CLI.
+- Git.
+
+Install the Python project with desktop and build dependencies:
 
 ```powershell
-python -m agent_farm run --task .\task.md --model your-worker-model --provider my-provider
+python -m pip install -e ".[desktop,build]"
 ```
 
-### 方式 B: Ollama / LM Studio 本地模型
-
-如果用 Codex CLI 的本地 OSS provider：
+### Run the Python tests
 
 ```powershell
-python -m agent_farm run --task .\task.md --oss --local-provider ollama --model gpt-oss:20b
+python -m unittest discover -s tests -v
 ```
 
-或者：
+The `0.4.6` release passes 89 automated tests covering configuration, secrets, provider catalogs,
+model protocol translation, the native tool loop, worktree isolation, machine review, Supervisor
+planning, collaborative synthesis, desktop runtime behavior, HTTP endpoints, and UI contracts.
+
+### Debug build
+
+Debug launches the Python backend from source, so backend and web UI changes do not require a new
+PyInstaller bundle:
 
 ```powershell
-python -m agent_farm run --task .\task.md --oss --local-provider lmstudio --model your-local-model
+.\scripts\build_native_windows.ps1 -Configuration Debug -Platform x64
 ```
 
-### 方式 C: Codex User Profile
+Use the WinUI `BuildAndRun.ps1` workflow or `winapp run` to launch a packaged WinUI debug build. Do
+not run the generated WinUI executable directly because it requires package identity.
 
-如果你已经在 `~/.codex/config.toml` 或 `$CODEX_HOME/<profile>.config.toml` 配好了 provider，可以直接让 worker 使用 Codex profile：
+### Release build
+
+Release freezes the backend with PyInstaller and copies it into the WinUI output:
 
 ```powershell
-python -m agent_farm run --task .\task.md --codex-profile cheap-worker
+.\scripts\build_native_windows.ps1 -Configuration Release -Platform x64
 ```
 
-或者：
-
-```powershell
-python -m agent_farm run --task .\task.md --codex-profile-v2 cheap-worker
-```
-
-Codex 官方要求 provider、auth、`model_provider`、`model_providers` 这类机器本地配置放在 user-level config 或命令行覆盖里，不应该放进项目级 `.codex/config.toml`。Agent Farm 因此选择用 gitignored local config 和 `codex exec -c ...` 来传递 worker provider。
-
-## Run Artifacts
-
-每次运行会写入一个 `.agent-farm/runs/<task-id>/` 目录：
-
-- `result.json`：任务状态、配置、改动文件、测试结果、机器审查结果。
-- `worker-prompt.md`：实际发送给 worker 的任务 prompt。
-- `worker-events.jsonl`：Codex JSON event stream。
-- `worker-stderr.log`：worker stderr。
-- `worker-final.md`：worker 最终报告。
-- `patch.diff`：worker worktree 中产生的 binary-capable git diff。
-- `tests/*.log`：orchestrator 重新运行测试命令后的日志。
-
-## 安全边界
-
-当前默认策略偏保守：
-
-- worker 在独立 worktree 中执行，不直接修改 supervisor 工作区；
-- worker 只产出 patch，不允许自动 merge；
-- merge 需要显式 `--yes`；
-- 可配置 allowed paths 和 forbidden paths；
-- 默认禁止 `.env`、secret、credential、token、CI workflow 等敏感路径；
-- 默认不接受 lockfile 变更，除非配置允许；
-- 测试失败或 worker 失败会导致机器审查失败。
-
-## 未来 Update 计划
-
-### Phase 1: 单 Worker MVP 完善
-
-- 增加更完整的 task spec schema。
-- 增加 worker 运行时间、工具调用次数、diff 行数和文件数的硬限制。
-- 增加对 Codex JSON event stream 的结构化解析。
-- 增加失败后的 revision prompt 生成。
-- 增加更多内置机器审查规则，例如禁止删除测试、禁止改部署配置、检测大规模重命名。
-
-### Phase 2: 半自动 Worker Farm
-
-- 支持多个 worker 并行运行。
-- 支持 explorer worker、implementation worker、reviewer worker 三种角色。
-- 支持任务队列和状态机持久化。
-- 支持模型分级策略：cheap、mid、senior。
-- 支持每个任务独立预算、超时、重试次数和上下文裁剪。
-- 自动生成 supervisor review report。
-
-### Phase 3: 可替换 Model Endpoint
-
-- 抽象 model adapter / endpoint layer。
-- 支持 Codex worker 使用不同 provider 或本地模型。
-- 支持 OpenAI-compatible / Responses-compatible gateway。
-- 支持按任务类型选择模型。
-- 记录每次 worker 的模型、耗时、成本估算和成功率。
-
-### Phase 4: 受控自动合并
-
-- 对低风险任务启用自动合并策略。
-- 支持风险分级和 merge policy。
-- 支持自动生成 PR 描述。
-- 支持和 GitHub Actions / CI 状态联动。
-- 对权限、支付、数据库、部署、安全逻辑等高风险区域保持人工确认。
-
-### Phase 5: Supervisor Workflow
-
-- 增加 supervisor-facing CLI 或 TUI。
-- 支持从自然语言需求自动生成 task spec。
-- 支持对多个 worker diff 做比较和选择。
-- 支持回滚、abandon、rerun、request revision 等完整生命周期。
-- 支持长期指标统计：一次通过率、返工次数、平均成本、测试失败率。
-
-## 当前状态
-
-这是一个早期 MVP，重点是跑通最小可用闭环：
+The release output is written below:
 
 ```text
-task spec -> isolated worktree -> Codex worker -> diff/tests/logs -> machine review -> explicit merge
+AgentFarm.Desktop\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64
 ```
 
-后续的重点不是让 worker 更“自由”，而是让 worker 更可控、更可验证、更便宜、更容易被高级 Codex 或人类 reviewer 接管。
+### Create a signed MSIX
+
+```powershell
+winapp cert generate `
+  --manifest .\AgentFarm.Desktop\Package.appxmanifest `
+  --output .\dist\signing\AgentFarm-dev.pfx `
+  --export-cer `
+  --if-exists overwrite
+
+winapp package `
+  .\AgentFarm.Desktop\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64 `
+  --cert .\dist\signing\AgentFarm-dev.pfx `
+  --output .\dist\AgentFarm-Native-0.4.6.0-x64.msix
+```
+
+Do not commit the PFX file. Production distribution should use a protected production certificate
+and timestamped signatures.
+
+## Repository layout
+
+```text
+AgentFarm.Desktop/       Native WinUI 3 desktop shell
+agent_farm/              Python product backend and orchestration runtime
+agent_farm/web/          Desktop workspace web assets
+docs/                    Product, architecture, and roadmap documents
+examples/                Safe configuration and plan examples
+packaging/               PyInstaller entry points and build specifications
+scripts/                 Windows build scripts
+tests/                   Automated unit, integration, and UI-contract tests
+```
+
+Important backend modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `agent_farm/model_client.py` | Responses and Chat Completions protocol clients |
+| `agent_farm/native_agent.py` | Multi-turn tool loop and bounded tool runtime |
+| `agent_farm/supervisor.py` | Planning, review, and collaborative synthesis |
+| `agent_farm/farm.py` | Parallel Worker orchestration and farm state |
+| `agent_farm/orchestrator.py` | Per-Worker lifecycle and worktree execution |
+| `agent_farm/review.py` | Deterministic machine review gates |
+| `agent_farm/provider_templates.py` | Built-in provider connection templates |
+| `agent_farm/provider_catalog.py` | Live provider model discovery and metadata |
+| `agent_farm/web_server.py` | Loopback desktop API |
+| `agent_farm/threads.py` | Persistent threads, turns, and event storage |
+
+## Current limitations
+
+- The Windows installer still requires manual trust of a development certificate.
+- The current release is x64-only.
+- Production code signing and automatic update delivery are not yet implemented.
+- Windows App Runtime dependency handling is not yet fully self-contained.
+- Provider compatibility can vary when a vendor exposes only a partial OpenAI-compatible API.
+- Web extraction cannot bypass authentication, paywalls, anti-bot pages, or inaccessible sources.
+- Agent Farm enforces engineering boundaries, but model output still requires appropriate human
+  judgment for high-risk code, financial, medical, legal, or production decisions.
+
+## Roadmap
+
+- Production-signed one-click Windows installer.
+- Smaller and self-contained release packages.
+- Automatic update checks and in-app upgrades.
+- Better per-task token, latency, and cost accounting.
+- More deterministic retry and recovery controls.
+- Richer diff, artifact, and evidence review in the desktop UI.
+- Reusable task templates and scheduled farms.
+- Additional provider-native protocol adapters where compatibility layers are incomplete.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/PRODUCT_KERNEL_PLAN.md](docs/PRODUCT_KERNEL_PLAN.md)
+for the longer-term product direction.
+
+## Contributing
+
+Issues and focused pull requests are welcome. Before submitting a change:
+
+1. Keep provider credentials and local configuration out of the repository.
+2. Add or update tests for behavior changes.
+3. Run the full Python test suite.
+4. For desktop changes, build the WinUI project for x64 Debug and Release as appropriate.
+5. Document new configuration fields, provider behavior, and user-visible limitations.
+
+## License
+
+Agent Farm is released under the [MIT License](LICENSE).

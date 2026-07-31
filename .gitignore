@@ -12,4 +12,5 @@ __pycache__/
 .ruff_cache/
 build/
 dist/
+test-artifacts/
 *.egg-info/

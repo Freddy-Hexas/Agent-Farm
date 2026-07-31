@@ -13,11 +13,19 @@ class TaskStatus(str, Enum):
     WORKER_RUNNING = "WORKER_RUNNING"
     WORKER_FINISHED = "WORKER_FINISHED"
     TESTING = "TESTING"
+    MACHINE_REVIEW_PENDING = "MACHINE_REVIEW_PENDING"
+    MACHINE_REVIEW_PASSED = "MACHINE_REVIEW_PASSED"
+    SUPERVISOR_REVIEW_PENDING = "SUPERVISOR_REVIEW_PENDING"
+    SUPERVISOR_APPROVED = "SUPERVISOR_APPROVED"
+    COMPLETED = "COMPLETED"
     REVIEW_PENDING = "REVIEW_PENDING"
     APPROVED = "APPROVED"
     REVISION_REQUESTED = "REVISION_REQUESTED"
     REJECTED = "REJECTED"
+    CHECKPOINT_CREATED = "CHECKPOINT_CREATED"
     MERGED = "MERGED"
+    ROLLBACK_REQUESTED = "ROLLBACK_REQUESTED"
+    ROLLED_BACK = "ROLLED_BACK"
     ABANDONED = "ABANDONED"
 
 
@@ -110,9 +118,19 @@ class MachineReview:
 
 @dataclass(frozen=True)
 class AgentFarmConfig:
+    agent_backend: str = "native"
     codex_binary: str = "codex"
+    supervisor_model: str | None = None
+    supervisor_provider: str | None = None
+    supervisor_reasoning_mode: str | None = None
+    supervisor_reasoning_effort: str | None = None
+    supervisor_codex_profile: str | None = None
+    supervisor_timeout_seconds: int = 900
+    auto_supervisor_review: bool = True
     worker_model: str | None = None
     worker_provider: str | None = None
+    worker_reasoning_mode: str | None = None
+    worker_reasoning_effort: str | None = None
     worker_oss: bool = False
     worker_local_provider: str | None = None
     worker_codex_profile: str | None = None
@@ -120,11 +138,18 @@ class AgentFarmConfig:
     secrets_env: str | None = ".agent-farm/secrets.env"
     model_providers: dict[str, dict[str, Any]] = field(default_factory=dict)
     codex_config_overrides: dict[str, Any] = field(default_factory=dict)
+    worker_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
+    default_worker_profile: str | None = None
+    max_parallel_workers: int = 4
     sandbox: str = "workspace-write"
     approval_policy: str = "never"
     runs_dir: str = ".agent-farm/runs"
+    farms_dir: str = ".agent-farm/farms"
     worktrees_dir: str = ".agent-farm/worktrees"
     timeout_seconds: int = 1800
+    native_max_turns: int = 24
+    native_command_timeout_seconds: int = 180
+    native_max_output_chars: int = 24_000
     test_timeout_seconds: int = 600
     max_diff_lines: int = 800
     max_changed_files: int = 25
@@ -145,9 +170,19 @@ class AgentFarmConfig:
 
     def to_json(self) -> dict[str, Any]:
         return {
+            "agent_backend": self.agent_backend,
             "codex_binary": self.codex_binary,
+            "supervisor_model": self.supervisor_model,
+            "supervisor_provider": self.supervisor_provider,
+            "supervisor_reasoning_mode": self.supervisor_reasoning_mode,
+            "supervisor_reasoning_effort": self.supervisor_reasoning_effort,
+            "supervisor_codex_profile": self.supervisor_codex_profile,
+            "supervisor_timeout_seconds": self.supervisor_timeout_seconds,
+            "auto_supervisor_review": self.auto_supervisor_review,
             "worker_model": self.worker_model,
             "worker_provider": self.worker_provider,
+            "worker_reasoning_mode": self.worker_reasoning_mode,
+            "worker_reasoning_effort": self.worker_reasoning_effort,
             "worker_oss": self.worker_oss,
             "worker_local_provider": self.worker_local_provider,
             "worker_codex_profile": self.worker_codex_profile,
@@ -155,11 +190,18 @@ class AgentFarmConfig:
             "secrets_env": self.secrets_env,
             "model_providers": self.model_providers,
             "codex_config_overrides": self.codex_config_overrides,
+            "worker_profiles": self.worker_profiles,
+            "default_worker_profile": self.default_worker_profile,
+            "max_parallel_workers": self.max_parallel_workers,
             "sandbox": self.sandbox,
             "approval_policy": self.approval_policy,
             "runs_dir": self.runs_dir,
+            "farms_dir": self.farms_dir,
             "worktrees_dir": self.worktrees_dir,
             "timeout_seconds": self.timeout_seconds,
+            "native_max_turns": self.native_max_turns,
+            "native_command_timeout_seconds": self.native_command_timeout_seconds,
+            "native_max_output_chars": self.native_max_output_chars,
             "test_timeout_seconds": self.test_timeout_seconds,
             "max_diff_lines": self.max_diff_lines,
             "max_changed_files": self.max_changed_files,

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "task_id": "auth-hardening",
+  "base_ref": "HEAD",
+  "max_parallel": 2,
+  "workers": [
+    {
+      "id": "auth-implementation",
+      "role": "implementation",
+      "profile": "cheap",
+      "goal": "Implement the scoped authentication change.",
+      "context": "The expensive supervisor has already selected the approach.",
+      "allowed_paths": [
+        "src/auth",
+        "tests/auth"
+      ],
+      "forbidden_paths": [
+        ".github/workflows"
+      ],
+      "test_commands": [
+        "python -m unittest discover"
+      ],
+      "acceptance": [
+        "The requested behavior is implemented.",
+        "Existing and focused tests pass."
+      ]
+    }
+  ]
+}

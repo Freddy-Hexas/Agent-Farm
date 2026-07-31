@@ -13,6 +13,10 @@ class PathMatchingTests(unittest.TestCase):
         self.assertTrue(path_matches("**/.env.*", "apps/web/.env.local"))
         self.assertFalse(path_matches("**/.env.*", "apps/web/env.local"))
 
+    def test_sensitive_glob_matches_root_and_is_case_insensitive(self):
+        self.assertTrue(path_matches("**/*secret*", "secrets.txt"))
+        self.assertTrue(path_matches("**/*secret*", "SECRET.txt"))
+
 
 class MachineReviewTests(unittest.TestCase):
     def test_rejects_forbidden_path(self):
@@ -63,6 +67,19 @@ class MachineReviewTests(unittest.TestCase):
         )
         self.assertEqual(review.status, "failed")
         self.assertTrue(any(f.code == "test_failed" for f in review.findings))
+
+    def test_rename_checks_old_path_against_forbidden_patterns(self):
+        config = AgentFarmConfig(forbidden_paths=["**/*secret*"], test_commands=[])
+        review = run_machine_review(
+            config,
+            [ChangedFile(status="R100", old_path="config/secrets.json", path="config/public.json")],
+            "diff --git a/config/secrets.json b/config/public.json\n",
+            [],
+        )
+        self.assertEqual(review.status, "failed")
+        self.assertTrue(
+            any(f.code == "forbidden_path" and f.path == "config/secrets.json" for f in review.findings)
+        )
 
     def test_diff_line_count_ignores_headers(self):
         patch = "\n".join(

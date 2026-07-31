@@ -4,26 +4,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .config import MODEL_PROVIDER_FIELDS
 from .models import AgentFarmConfig, CommandResult, RunPaths
 from .secrets import load_secrets_env
 from .toml_util import toml_dotted_key, toml_literal
 from .util import run_command
-
-PROVIDER_FIELDS = {
-    "name",
-    "base_url",
-    "env_key",
-    "wire_api",
-    "http_headers",
-    "env_http_headers",
-    "extra_query",
-    "request_max_retries",
-    "requires_openai_auth",
-    "stream_idle_timeout_ms",
-    "stream_max_retries",
-    "supports_websockets",
-}
-
 
 def _add_codex_config(args: list[str], key: str, value: Any) -> None:
     args.extend(["-c", f"{key}={toml_literal(value)}"])
@@ -42,7 +27,7 @@ def _add_provider_config(args: list[str], config: AgentFarmConfig) -> None:
     for field, value in provider.items():
         if value is None:
             continue
-        if field not in PROVIDER_FIELDS:
+        if field not in MODEL_PROVIDER_FIELDS:
             raise ValueError(f"Unsupported model provider field for {provider_id}: {field}")
         if provider_id == "openai" and field == "base_url":
             _add_codex_config(args, "openai_base_url", value)

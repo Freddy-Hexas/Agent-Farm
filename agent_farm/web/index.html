@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Agent Farm</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='none' stroke='%23d7ff64' stroke-width='2' d='M16 3 27 9.5v13L16 29 5 22.5v-13L16 3Zm0 7 6 3.5v7L16 24l-6-3.5v-7l6-3.5Z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="window-drag-region pywebview-drag-region"></div>
+      <div class="brand-row">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 28 28"><path d="M14 2.75 23.74 8.38v11.24L14 25.25l-9.74-5.63V8.38L14 2.75Z"/><path d="m9.25 11.25 4.75-2.7 4.75 2.7v5.5L14 19.45l-4.75-2.7v-5.5Z"/></svg>
+          </span>
+          <strong>Agent Farm</strong>
+        </div>
+        <button class="icon-button subtle" id="theme-button" title="Toggle appearance" aria-label="Toggle appearance">
+          <svg viewBox="0 0 24 24"><path d="M20.5 14.2A8 8 0 0 1 9.8 3.5a8.3 8.3 0 1 0 10.7 10.7Z"/></svg>
+        </button>
+      </div>
+
+      <button class="new-task-button" id="new-task-button">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span>New task</span>
+        <kbd>Ctrl N</kbd>
+      </button>
+
+      <nav class="nav-list" aria-label="Main navigation">
+        <button class="nav-item active" data-view="workspace" type="button" aria-current="page">
+          <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8.5 8h7M8.5 12h5"/></svg>
+          <span>Tasks</span>
+        </button>
+        <button class="nav-item" data-view="history" type="button">
+          <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6M4 4v4.6h4.6M12 8v5l3 2"/></svg>
+          <span>Runs</span>
+          <span class="nav-count" id="farm-count">0</span>
+        </button>
+        <button class="nav-item" data-view="profiles" type="button">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/><circle cx="8" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="12" cy="17" r="2"/></svg>
+          <span>Model routes</span>
+        </button>
+        <button class="nav-item" data-view="settings" type="button">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-section projects-section">
+        <div class="section-label"><span>Current project</span></div>
+        <div class="project-item active" aria-label="Current project">
+          <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v10H3z"/></svg>
+          <span><strong id="repo-name">Connecting…</strong><small id="repo-branch">Local repository</small></span>
+          <i class="status-dot"></i>
+        </div>
+      </div>
+
+      <div class="sidebar-section threads-section">
+        <div class="section-label"><span>Recent tasks</span></div>
+        <div id="recent-farms" class="recent-farms"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="route-summary" id="supervisor-route-button" type="button"><span class="brain-dot"></span><div><strong>Supervisor</strong><small id="supervisor-status">Checking route…</small></div></button>
+        <button class="icon-button subtle" id="refresh-button" title="Refresh" aria-label="Refresh">
+          <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6.2 6.2L4 9m16 6-2.2 2.8A7 7 0 0 1 5.5 15"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar" id="window-titlebar">
+        <div class="titlebar-drag-area pywebview-drag-region" aria-hidden="true"></div>
+        <button class="mobile-menu icon-button" id="mobile-menu" aria-label="Open menu">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="thread-heading">
+          <strong id="view-title">New task</strong>
+          <span><i class="repo-indicator"></i><span id="mission-repo">Current project</span></span>
+        </div>
+        <div class="top-actions">
+          <div class="branch-pill"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><path d="M6 7v10M18 7v2a4 4 0 0 1-4 4H6"/></svg><span>Current branch</span></div>
+          <div class="connection-pill"><span></span>Local</div>
+        </div>
+        <div class="window-controls" aria-label="Window controls">
+          <button class="window-control" id="minimize-window" title="Minimize" aria-label="Minimize">
+            <svg viewBox="0 0 12 12"><path d="M2 8.5h8"/></svg>
+          </button>
+          <button class="window-control" id="maximize-window" title="Maximize" aria-label="Maximize">
+            <svg class="maximize-icon" viewBox="0 0 12 12"><rect x="2.25" y="2.25" width="7.5" height="7.5" rx=".5"/></svg>
+            <svg class="restore-icon" viewBox="0 0 12 12"><path d="M4 3V2h6v6H9M2 4h6v6H2z"/></svg>
+          </button>
+          <button class="window-control close-control" id="close-window" title="Close" aria-label="Close">
+            <svg viewBox="0 0 12 12"><path d="m2.5 2.5 7 7m0-7-7 7"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="app-status-banner hidden" id="app-status-banner" role="status">
+        <span class="connection-status-dot" aria-hidden="true"></span>
+        <span id="app-status-copy"></span>
+        <button class="text-button" id="app-status-retry" type="button">Retry</button>
+      </div>
+
+      <div id="workspace-view" class="view active">
+        <div class="thread-scroll">
+          <div class="thread-column">
+            <section class="welcome-state" id="welcome-state">
+              <div class="welcome-glyph" aria-hidden="true">
+                <svg viewBox="0 0 48 48"><path d="M24 5 40.5 14.5v19L24 43 7.5 33.5v-19L24 5Z"/><path d="m16 19.5 8-4.5 8 4.5v9L24 33l-8-4.5v-9Z"/></svg>
+              </div>
+              <h1>What should we build in <span id="welcome-repo">this project</span>?</h1>
+              <p>Choose a starting point or describe a task below. A high-capability Supervisor plans and reviews; economical Workers execute in isolated worktrees.</p>
+              <div class="intent-grid" aria-label="Task starters">
+                <button class="intent-card" data-intent-prompt="Explore this repository. Map the architecture, identify the most important modules, and return an evidence-backed technical overview without changing files.">
+                  <span class="intent-icon blue"><svg viewBox="0 0 24 24"><path d="m14 4 6 6-4 4-6-6 4-4ZM9 9l-5 5m2-2 6 6m-8-4-1 5 5-1"/></svg></span>
+                  <strong>Explore the codebase</strong><small>Use economical scout Workers</small>
+                </button>
+                <button class="intent-card" data-intent-prompt="Plan and build a new feature in this repository. Split implementation and tests across isolated Workers, then review the combined evidence.">
+                  <span class="intent-icon purple"><svg viewBox="0 0 24 24"><path d="m14 4 6 6-8 8-6 2 2-6 6-10Z"/><path d="m12 6 6 6M6 18l-2 2"/></svg></span>
+                  <strong>Build a feature</strong><small>Plan, implement, and test</small>
+                </button>
+                <button class="intent-card" data-intent-prompt="Review the current changes for correctness, regressions, security risks, and missing tests. Do not modify files until the review is complete.">
+                  <span class="intent-icon green"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6"/><path d="m9 12 2 2 4-4"/></svg></span>
+                  <strong>Review changes</strong><small>Find risks and missing tests</small>
+                </button>
+                <button class="intent-card" data-intent-prompt="Investigate and fix a failing behavior. Assign separate Workers to reproduce, diagnose, implement, and verify the fix.">
+                  <span class="intent-icon orange"><svg viewBox="0 0 24 24"><path d="M8 9h8M9 4l1 3m5-3-1 3M7 13h10v2a5 5 0 0 1-10 0v-2ZM5 11l-2-2m16 2 2-2M5 17l-2 2m16-2 2 2"/></svg></span>
+                  <strong>Fix a problem</strong><small>Reproduce, diagnose, verify</small>
+                </button>
+              </div>
+            </section>
+
+            <section class="thread-turn user-turn hidden" id="user-turn">
+              <div class="turn-avatar user-avatar">You</div>
+              <div class="turn-body"><div class="turn-label">You</div><p id="user-turn-copy"></p></div>
+            </section>
+
+            <div class="mission-status hidden" id="mission-status">
+              <div class="turn-avatar supervisor-avatar"><span class="thinking-orb"></span></div>
+              <div class="turn-body"><div class="turn-label">Supervisor</div><strong id="mission-status-title">Reading the repository</strong><p id="mission-status-copy">Understanding boundaries in read-only mode and drafting a Worker Plan…</p><div class="activity-line"><i></i><span>Analyzing project structure</span></div></div>
+            </div>
+
+            <section class="composer-card hidden" id="composer-card">
+              <div class="assistant-header">
+                <div class="turn-avatar supervisor-avatar">S</div>
+                <div><div class="turn-label">Supervisor</div><h2>Execution plan</h2></div>
+                <span class="plan-state">Awaiting confirmation</span>
+              </div>
+              <p class="plan-intro">I split the task across isolated Workers. Review the model routes, file boundaries, and acceptance criteria before execution.</p>
+
+              <div class="task-grid">
+                <label class="field field-wide"><span>Task name</span><input id="task-id" value="" placeholder="Generated by the Supervisor"></label>
+                <label class="field"><span>Base branch</span><input id="base-ref" value="HEAD" placeholder="HEAD"></label>
+                <label class="field"><span>Parallel limit</span><input id="max-parallel" type="number" min="1" value="3"></label>
+                <label class="field field-wide"><span>Final deliverable <small>optional, repository-relative</small></span><input id="deliverable-path" value="" placeholder="reports/final-report.md"></label>
+                <label class="field field-wide"><span>Synthesis instructions</span><textarea id="deliverable-instructions" rows="2" placeholder="Combine every Worker contribution into one sourced, polished report."></textarea></label>
+              </div>
+
+              <div class="workers-heading">
+                <div><strong>Worker team</strong><span>Each Worker receives an isolated worktree</span></div>
+                <div><button class="text-button" id="load-example">Load example</button><button class="secondary-button" id="add-worker"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add Worker</button></div>
+              </div>
+              <div id="worker-list" class="worker-list"></div>
+
+              <div class="launch-row">
+                <div class="launch-note"><svg viewBox="0 0 24 24"><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></svg><span><strong>Safe execution</strong>Workers cannot merge directly or escape their file boundaries.</span></div>
+                <button class="primary-button" id="launch-button"><span>Start execution</span><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></button>
+              </div>
+            </section>
+
+            <section class="live-section hidden" id="live-section">
+              <div class="assistant-header">
+                <div class="turn-avatar worker-avatar">W</div>
+                <div><div class="turn-label">Worker Pool</div><h2 id="live-title">Task in progress</h2></div>
+                <span class="status-badge running" id="live-status">QUEUED</span>
+              </div>
+              <div class="progress-track"><i id="live-progress"></i></div>
+              <div id="live-workers" class="live-workers"></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="composer-dock">
+          <div class="composer-context-bar">
+            <div class="project-context"><svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v10H3z"/></svg><span id="composer-repo">Current project</span></div>
+            <span class="model-context"><i class="brain-dot"></i><span id="composer-supervisor-model">Supervisor model</span></span>
+          </div>
+          <div class="mission-card">
+            <textarea id="mission-prompt" rows="3" placeholder="Describe a task, or use @ to reference files…"></textarea>
+            <div class="mission-footer">
+              <div class="composer-tools">
+                <div class="mode-switch" aria-label="Task mode">
+                  <button class="active" data-compose-mode="plan" type="button"><span class="mode-icon">◇</span>Supervisor plan</button>
+                  <button data-compose-mode="manual" type="button">Manual plan</button>
+                </div>
+                <span class="permission-chip"><svg viewBox="0 0 24 24"><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></svg>Workspace write</span>
+                <span class="context-chip"><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20v-2a5 5 0 0 1 10 0v2M14 20v-1.5a4 4 0 0 1 7 0V20"/></svg><b id="mission-worker-count">Up to 3 economical Workers</b></span>
+              </div>
+              <button class="send-button" id="draft-plan-button" title="Send task"><svg viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></svg><span class="sr-only">Ask the Supervisor to plan</span></button>
+            </div>
+          </div>
+          <p class="composer-hint">Agents can make mistakes. Review changes and test evidence before merging.</p>
+        </section>
+      </div>
+
+      <div id="history-view" class="view page-view">
+        <section class="page-heading"><div><h1>Run history</h1><p>Inspect Worker results, test evidence, and Supervisor decisions for every task.</p></div><button class="secondary-button" id="history-refresh">Refresh</button></section>
+        <div class="history-table-card">
+          <div class="history-table-head"><span>Task</span><span>Status</span><span>Workers</span><span>Base</span><span></span></div>
+          <div id="history-list"></div>
+        </div>
+      </div>
+
+      <div id="profiles-view" class="view page-view">
+        <section class="page-heading"><div><h1>Model routes</h1><p>The Supervisor uses a high-capability model while Workers route to economical models by role.</p></div></section>
+        <div class="routing-callout"><div><span class="brain-dot"></span><strong>High-capability Supervisor</strong><small>Planning, review, and final decisions</small></div><svg viewBox="0 0 54 16"><path d="M2 8h48m-6-5 6 5-6 5"/></svg><div><span class="worker-dot"></span><strong>Economical Workers</strong><small>Exploration, implementation, tests, and evidence</small></div></div>
+        <div id="profile-grid" class="profile-grid"></div>
+      </div>
+
+      <div id="settings-view" class="view settings-view">
+        <div class="settings-shell">
+          <aside class="settings-navigation" aria-label="Settings sections">
+            <div class="settings-navigation-title">Settings</div>
+            <button class="settings-nav-item active" data-settings-section="agents" type="button" aria-selected="true"><span class="brain-dot"></span><span>Agents and models</span></button>
+            <button class="settings-nav-item" data-settings-section="providers" type="button" aria-selected="false"><span class="worker-dot"></span><span>Providers</span></button>
+            <button class="settings-nav-item" data-settings-section="safety" type="button" aria-selected="false"><span class="review-dot"></span><span>Safety</span></button>
+            <button class="settings-nav-item" data-settings-section="storage" type="button" aria-selected="false"><span class="settings-nav-glyph">↳</span><span>Worktrees and limits</span></button>
+            <button class="settings-nav-item" data-settings-section="general" type="button" aria-selected="false"><span class="settings-nav-glyph">◐</span><span>General</span></button>
+            <div class="settings-file-note"><span>Saved locally</span><code id="settings-file-path">agent-farm.local.json</code></div>
+          </aside>
+
+          <section class="settings-main">
+            <header class="settings-header">
+              <div><h1 id="settings-section-title">Agents and models</h1><p id="settings-section-copy">Route expensive planning and review separately from economical execution.</p></div>
+              <div class="settings-header-actions"><span id="settings-save-state">Loading settings…</span><button class="secondary-button" id="settings-reload-button">Discard</button><button class="primary-button" id="settings-save-button">Save</button></div>
+            </header>
+
+            <div class="settings-scroll">
+              <div class="settings-feedback hidden" id="settings-feedback" role="status">
+                <span class="settings-feedback-indicator" aria-hidden="true"></span>
+                <div><strong id="settings-feedback-title"></strong><p id="settings-feedback-copy"></p></div>
+                <button class="secondary-button compact-button hidden" id="settings-retry-button" type="button">Try again</button>
+              </div>
+              <section class="settings-panel active" data-settings-panel="agents">
+                <div class="settings-status-grid">
+                  <div class="settings-status-card"><span class="brain-dot"></span><div><strong>Supervisor brain</strong><small>Plans, routes, and reviews with the high-capability model.</small></div></div>
+                  <div class="settings-status-card"><span class="worker-dot"></span><div><strong>Worker pool</strong><small>Executes scoped tasks with economical or local models.</small></div></div>
+                </div>
+
+                <div class="settings-group">
+                  <div class="settings-group-heading"><div><h2>Supervisor</h2><p>The Supervisor explores the repository with read-only native tools before drafting a Worker Plan.</p></div></div>
+                  <div class="settings-row"><div><strong>Provider</strong><small>Route Supervisor requests independently from economical Workers.</small></div><select id="settings-supervisor-provider"></select></div>
+                  <div class="settings-row"><div><strong>Model</strong><small>Official providers load every compatible model available to your account.</small></div><div id="settings-supervisor-model-picker" class="model-picker"></div></div>
+                  <div id="settings-supervisor-reasoning"></div>
+                  <div class="settings-row"><div><strong>Legacy Codex profile</strong><small>Only used when the Codex compatibility backend is selected.</small></div><input id="settings-supervisor-profile" placeholder="Optional"></div>
+                  <div class="settings-row"><div><strong>Planning timeout</strong><small>Maximum time for plan generation.</small></div><div class="number-with-unit"><input id="settings-supervisor-timeout" type="number" min="1" max="86400"><span>seconds</span></div></div>
+                  <label class="settings-row toggle-row"><div><strong>Automatic final review</strong><small>Let the high-capability Supervisor inspect Worker patches and submit the final structured decision.</small></div><input id="settings-auto-supervisor-review" type="checkbox" class="toggle-input"><span class="toggle-control"></span></label>
+                </div>
+
+                <div class="settings-group">
+                  <div class="settings-group-heading"><div><h2>Worker routing</h2><p>Each Worker has a friendly name while Agent Farm keeps its stable routing ID internally.</p></div><button class="secondary-button compact-button" id="add-profile-button">Add Worker</button></div>
+                  <div class="settings-row"><div><strong>Default worker route</strong><small>Used when the Supervisor does not select a specific tier.</small></div><select id="settings-default-profile"></select></div>
+                  <div class="settings-row"><div><strong>Parallel worker limit</strong><small>Hard ceiling for concurrent Worker processes.</small></div><input id="settings-max-parallel" type="number" min="1" max="12"></div>
+                  <div id="settings-profile-list" class="settings-card-list"></div>
+                </div>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="providers">
+                <div class="settings-group first-group">
+                  <div class="settings-group-heading"><div><h2>Model providers</h2><p>Add or edit a provider here and it becomes immediately available in Supervisor and Worker routes.</p></div></div>
+                  <div class="provider-template-bar">
+                    <label class="provider-template-select"><span>Provider template</span><select id="settings-provider-template"></select></label>
+                    <div class="provider-template-copy"><strong id="provider-template-name">Custom OpenAI-compatible</strong><span id="provider-template-description">Enter any compatible name, base URL, and API key.</span><a id="provider-template-docs" class="hidden" href="#" target="_blank" rel="noreferrer">Open provider docs</a></div>
+                    <button class="secondary-button compact-button" id="add-provider-button">Add provider</button>
+                  </div>
+                  <div class="settings-security-note"><svg viewBox="0 0 24 24"><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></svg><div><strong>Credentials stay outside project configuration</strong><span>API keys entered here are written to <code>.agent-farm/secrets.env</code> and are never returned to the interface. Leave the field blank to keep the current key.</span></div></div>
+                  <div id="settings-provider-list" class="settings-card-list"></div>
+                </div>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="safety">
+                <div class="settings-group first-group">
+                  <div class="settings-group-heading"><div><h2>Command safety</h2><p>These defaults apply to new Workers unless a route explicitly overrides them.</p></div></div>
+                  <div class="settings-row"><div><strong>Sandbox mode</strong><small>Choose how much of the filesystem Workers can modify.</small></div><select id="settings-sandbox"></select></div>
+                  <div class="settings-row"><div><strong>Approval policy</strong><small>Permission behavior for the legacy Codex compatibility backend.</small></div><select id="settings-approval"></select></div>
+                  <div class="settings-row"><div><strong>Maximum agent turns</strong><small>Stops a native Agent that does not reach completion.</small></div><input id="settings-native-max-turns" type="number" min="1" max="200"></div>
+                  <div class="settings-row"><div><strong>Command timeout</strong><small>Hard limit for each native test, build, or analysis command.</small></div><div class="number-with-unit"><input id="settings-native-command-timeout" type="number" min="1" max="86400"><span>seconds</span></div></div>
+                  <label class="settings-row toggle-row"><div><strong>Network access</strong><small>Allow network access while using the workspace-write sandbox.</small></div><input id="settings-network-access" type="checkbox" class="toggle-input"><span class="toggle-control"></span></label>
+                  <label class="settings-row toggle-row"><div><strong>Ephemeral Worker sessions</strong><small>Do not persist child-agent conversations after execution.</small></div><input id="settings-ephemeral" type="checkbox" class="toggle-input"><span class="toggle-control"></span></label>
+                  <label class="settings-row toggle-row"><div><strong>Allow lockfile changes</strong><small>Permit Workers to modify dependency lockfiles during machine review.</small></div><input id="settings-allow-lockfiles" type="checkbox" class="toggle-input"><span class="toggle-control"></span></label>
+                </div>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="storage">
+                <div class="settings-group first-group">
+                  <div class="settings-group-heading"><div><h2>Artifacts and worktrees</h2><p>All paths are resolved inside the active repository.</p></div></div>
+                  <div class="settings-row"><div><strong>Worktree directory</strong><small>Isolated Worker checkouts.</small></div><input id="settings-worktrees-dir"></div>
+                  <div class="settings-row"><div><strong>Run artifact directory</strong><small>Logs, patches, and final Worker reports.</small></div><input id="settings-runs-dir"></div>
+                  <div class="settings-row"><div><strong>Farm evidence directory</strong><small>Aggregated machine review and Supervisor decisions.</small></div><input id="settings-farms-dir"></div>
+                </div>
+                <div class="settings-group">
+                  <div class="settings-group-heading"><div><h2>Execution and review limits</h2><p>Bound model spend and the maximum patch size accepted for review.</p></div></div>
+                  <div class="settings-row"><div><strong>Worker timeout</strong><small>Default maximum runtime for one Worker.</small></div><div class="number-with-unit"><input id="settings-worker-timeout" type="number" min="1" max="86400"><span>seconds</span></div></div>
+                  <div class="settings-row"><div><strong>Test timeout</strong><small>Maximum runtime for each configured verification command.</small></div><div class="number-with-unit"><input id="settings-test-timeout" type="number" min="1" max="86400"><span>seconds</span></div></div>
+                  <div class="settings-row"><div><strong>Maximum changed files</strong><small>Machine review fails above this limit.</small></div><input id="settings-max-files" type="number" min="1"></div>
+                  <div class="settings-row"><div><strong>Maximum diff lines</strong><small>Machine review fails above this limit.</small></div><input id="settings-max-diff" type="number" min="1"></div>
+                </div>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="general">
+                <div class="settings-group first-group">
+                  <div class="settings-group-heading"><div><h2>Application</h2><p>Desktop appearance and autonomous Agent runtime.</p></div></div>
+                  <div class="settings-row"><div><strong>Appearance</strong><small>Use the system theme or choose a fixed appearance.</small></div><select id="settings-appearance"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></div>
+                  <div class="settings-row"><div><strong>Agent backend</strong><small>Native runs inside Agent Farm and does not require Codex.</small></div><select id="settings-agent-backend"></select></div>
+                  <div class="settings-row"><div><strong>Legacy Codex executable</strong><small>Optional command used only by the Codex compatibility backend.</small></div><input id="settings-codex-binary" placeholder="codex"></div>
+                  <div class="settings-row"><div><strong>Runtime status</strong><small id="settings-runtime-copy">Checking the autonomous Agent runtime...</small></div><span class="status-badge" id="settings-runtime-status">Checking</span></div>
+                  <div class="settings-row"><div><strong>Application version</strong><small>Use this value to confirm that the latest desktop build is running.</small></div><code id="settings-app-version">Loading...</code></div>
+                  <div class="settings-row"><div><strong>Configuration scope</strong><small>Settings are stored in the gitignored machine-local layer.</small></div><code id="settings-config-scope">agent-farm.local.json</code></div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <aside class="inspector" id="inspector">
+      <div class="inspector-header"><div><span>Changes and evidence</span><h2 id="inspector-title">Review results</h2></div><button class="icon-button" id="close-inspector" aria-label="Close"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div id="inspector-empty" class="inspector-empty"><div class="empty-diff"><span>+12</span><span>-3</span></div><h3>Select a run</h3><p>Open a recent task or run to inspect Worker evidence and patches.</p></div>
+      <div id="inspector-content" class="inspector-content hidden">
+        <div class="farm-overview"><span class="status-badge" id="inspect-status"></span><p id="inspect-base"></p></div>
+        <div class="worker-tabs" id="worker-tabs"></div>
+        <div id="worker-detail"></div>
+        <div class="decision-panel" id="decision-panel">
+          <div class="panel-label">SUPERVISOR DECISION</div>
+          <div class="decision-options"><button data-decision="approve_merge">Approve</button><button data-decision="request_revision">Revise</button><button data-decision="reject">Reject</button><button data-decision="hold_for_user">Hold</button></div>
+          <div class="decision-grid">
+            <label class="field"><span>Risk level</span><select id="risk-level"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
+            <label class="field checkbox-field"><input type="checkbox" id="rollback-required" checked><span>Require rollback plan</span></label>
+          </div>
+          <label class="field"><span>Decision rationale</span><textarea id="decision-reason" rows="3" placeholder="Explain the evidence and next action…"></textarea></label>
+          <button class="primary-button full" id="submit-decision">Submit Supervisor decision</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="resize-handle resize-n" data-resize-edge="n"></div>
+    <div class="resize-handle resize-ne" data-resize-edge="ne"></div>
+    <div class="resize-handle resize-e" data-resize-edge="e"></div>
+    <div class="resize-handle resize-se" data-resize-edge="se"></div>
+    <div class="resize-handle resize-s" data-resize-edge="s"></div>
+    <div class="resize-handle resize-sw" data-resize-edge="sw"></div>
+    <div class="resize-handle resize-w" data-resize-edge="w"></div>
+    <div class="resize-handle resize-nw" data-resize-edge="nw"></div>
+  </div>
+
+  <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  <template id="worker-template">
+    <article class="worker-card">
+      <div class="worker-card-top">
+        <span class="worker-index"></span>
+        <label class="field compact"><span>Worker ID</span><input data-field="id" placeholder="frontend"></label>
+        <label class="field compact role-field"><span>Role</span><input data-field="role" placeholder="Frontend engineer"></label>
+        <label class="field compact"><span>Model profile</span><select data-field="profile"></select></label>
+        <button class="icon-button remove-worker" aria-label="Remove Worker"><svg viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M8 10v8M12 10v8M16 10v8M7 7l1 14h8l1-14"/></svg></button>
+      </div>
+      <div class="worker-form">
+        <label class="field"><span>Goal</span><textarea data-field="goal" rows="2" placeholder="Describe the exact deliverable for this Worker…"></textarea></label>
+        <div class="worker-details">
+          <label class="field"><span>Allowed paths <small>one per line</small></span><textarea data-field="allowed_paths" rows="2" placeholder="agent_farm/web/**"></textarea></label>
+          <label class="field"><span>Test commands <small>one per line</small></span><textarea data-field="test_commands" rows="2" placeholder="python -m unittest"></textarea></label>
+          <label class="field"><span>Acceptance criteria <small>one per line</small></span><textarea data-field="acceptance" rows="2" placeholder="The interface loads successfully"></textarea></label>
+          <label class="field"><span>Additional context</span><textarea data-field="context" rows="2" placeholder="Provide only the context this Worker needs…"></textarea></label>
+        </div>
+        <button class="details-toggle" type="button">Show execution boundaries <svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
+      </div>
+    </article>
+  </template>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,6 +1,31 @@
 {
-  "worker_model": "your-worker-model",
-  "worker_provider": "my-provider",
+  "agent_backend": "native",
+  "supervisor_model": "your-high-capability-model",
+  "supervisor_provider": "my-provider",
+  "supervisor_codex_profile": null,
+  "supervisor_timeout_seconds": 900,
+  "auto_supervisor_review": true,
+  "native_max_turns": 24,
+  "native_command_timeout_seconds": 180,
+  "default_worker_profile": "cheap",
+  "max_parallel_workers": 3,
+  "worker_profiles": {
+    "cheap": {
+      "display_name": "Economy Worker",
+      "model": "your-cheap-worker-model",
+      "provider": "my-provider",
+      "timeout_seconds": 900,
+      "codex_config_overrides": {
+        "model_reasoning_effort": "low"
+      }
+    },
+    "mid": {
+      "display_name": "Balanced Worker",
+      "model": "your-mid-worker-model",
+      "provider": "my-provider",
+      "timeout_seconds": 1800
+    }
+  },
   "secrets_env": ".agent-farm/secrets.env",
   "model_providers": {
     "my-provider": {

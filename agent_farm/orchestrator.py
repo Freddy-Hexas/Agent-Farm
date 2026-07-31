@@ -4,8 +4,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .codex_worker import run_codex_worker
-from .config import load_config
+from .codex_worker import run_codex_worker as run_legacy_codex_worker
+from .config import load_config, resolve_worker_profile
 from .git_ops import (
     GitError,
     apply_patch,
@@ -18,6 +18,7 @@ from .git_ops import (
     resolve_ref,
 )
 from .models import AgentFarmConfig, RunPaths, TaskStatus, TestResult
+from .native_agent import run_native_worker
 from .review import run_machine_review
 from .specs import build_worker_prompt, make_task_id, read_task_spec
 from .util import ensure_inside, read_json, run_command, write_json
@@ -25,6 +26,14 @@ from .util import ensure_inside, read_json, run_command, write_json
 
 class OrchestratorError(RuntimeError):
     pass
+
+
+def run_codex_worker(**kwargs):
+    """Dispatch through the selected harness; name retained for API compatibility."""
+    config = kwargs["config"]
+    if config.agent_backend == "codex":
+        return run_legacy_codex_worker(**kwargs)
+    return run_native_worker(**kwargs)
 
 
 def _repo_relative(repo_root: Path, path: Path) -> str:
@@ -147,10 +156,12 @@ def prepare_dry_run(
     local_provider: str | None = None,
     codex_profile: str | None = None,
     codex_profile_v2: str | None = None,
+    profile: str | None = None,
 ) -> str:
     repo_root = find_repo_root(repo)
+    base_config, _ = resolve_worker_profile(load_config(repo_root, config_path), profile)
     config = _merge_overrides(
-        load_config(repo_root, config_path),
+        base_config,
         allowed_paths=allowed_paths,
         forbidden_paths=forbidden_paths,
         test_commands=test_commands,
@@ -185,10 +196,16 @@ def run_task(
     local_provider: str | None = None,
     codex_profile: str | None = None,
     codex_profile_v2: str | None = None,
+    profile: str | None = None,
+    task_id_override: str | None = None,
 ) -> dict[str, Any]:
     repo_root = find_repo_root(repo)
-    config = _merge_overrides(
+    base_config, selected_profile = resolve_worker_profile(
         load_config(repo_root, config_path),
+        profile,
+    )
+    config = _merge_overrides(
+        base_config,
         allowed_paths=allowed_paths,
         forbidden_paths=forbidden_paths,
         test_commands=test_commands,
@@ -202,7 +219,7 @@ def run_task(
         codex_profile_v2=codex_profile_v2,
     )
     base_commit = resolve_ref(repo_root, base_ref)
-    task_id = make_task_id(task_file)
+    task_id = task_id_override or make_task_id(task_file)
     run_dir = (repo_root / config.runs_dir / task_id).resolve()
     worktree = (repo_root / config.worktrees_dir / task_id).resolve()
     ensure_inside(repo_root, run_dir)
@@ -265,6 +282,8 @@ def run_task(
         config=config,
         extra={
             "worker": {
+                "backend": config.agent_backend,
+                "profile": selected_profile,
                 "returncode": worker_result.returncode,
                 "timed_out": worker_result.timed_out,
                 "events_file": str(paths.worker_events_file),
@@ -288,9 +307,9 @@ def run_task(
     paths.patch_file.write_text(patch, encoding="utf-8")
     worker_failure = None
     if worker_result.timed_out:
-        worker_failure = "Codex worker timed out."
+        worker_failure = "Worker agent timed out."
     elif worker_result.returncode != 0:
-        worker_failure = f"Codex worker exited with code {worker_result.returncode}."
+        worker_failure = f"Worker agent exited with code {worker_result.returncode}."
     machine_review = run_machine_review(
         config,
         changed_files,
@@ -300,9 +319,14 @@ def run_task(
         worker_failure_message=worker_failure,
     )
 
-    final_status = TaskStatus.REVIEW_PENDING if machine_review.passed else TaskStatus.REVISION_REQUESTED
+    final_status = (
+        TaskStatus.SUPERVISOR_REVIEW_PENDING
+        if machine_review.passed
+        else TaskStatus.REVISION_REQUESTED
+    )
     payload = {
         "worker": {
+            "profile": selected_profile,
             "returncode": worker_result.returncode,
             "timed_out": worker_result.timed_out,
             "events_file": str(paths.worker_events_file),
