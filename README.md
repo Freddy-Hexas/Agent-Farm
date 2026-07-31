@@ -7,8 +7,8 @@ Agent Farm is a Windows desktop application for autonomous multi-agent work. A h
 **Worker**, reviews the evidence, and produces the final result. Workers can use substantially less
 expensive models than the Supervisor.
 
-[![Version](https://img.shields.io/badge/version-0.4.6-blue)](https://github.com/Freddy-Hexas/Agent-Farm/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](https://github.com/Freddy-Hexas/Agent-Farm/releases)
+[![Version](https://img.shields.io/badge/version-0.4.6-blue)](releases/v0.4.6)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](releases/v0.4.6)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 > [!IMPORTANT]
@@ -147,10 +147,10 @@ used by the CLI, and Settings updates are applied to subsequent runs.
 
 ### Install the current preview
 
-1. Open the [latest GitHub Release](https://github.com/Freddy-Hexas/Agent-Farm/releases/latest).
+1. Open the [v0.4.6 download directory](releases/v0.4.6).
 2. Download:
-   - `AgentFarm-Native-0.4.6.0-x64.msix`
-   - `AgentFarm-dev.cer`
+   - [`AgentFarm-Native-0.4.6.0-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.4.6/AgentFarm-Native-0.4.6.0-x64.msix)
+   - [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.4.6/AgentFarm-dev.cer)
 3. Import `AgentFarm-dev.cer` into the current user's **Trusted People** certificate store.
 4. Double-click `AgentFarm-Native-0.4.6.0-x64.msix` and select **Install**.
 5. Launch **Agent Farm** from the Start menu.
