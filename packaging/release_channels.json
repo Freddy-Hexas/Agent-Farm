@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "repository": "Freddy-Hexas/Agent-Farm",
+  "channels": {
+    "stable": {
+      "release_path": "latest/download",
+      "appinstaller_asset": "AgentFarm-stable.appinstaller",
+      "package_asset": "AgentFarm-Native-x64.msix",
+      "hours_between_update_checks": 4,
+      "prerelease": false
+    },
+    "preview": {
+      "release_path": "download/preview",
+      "appinstaller_asset": "AgentFarm-preview.appinstaller",
+      "package_asset": "AgentFarm-Native-x64.msix",
+      "hours_between_update_checks": 1,
+      "prerelease": true
+    }
+  }
+}

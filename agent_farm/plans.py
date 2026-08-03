@@ -11,6 +11,7 @@ from .specs import slugify
 WORKER_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 DECISIONS = {"approve_merge", "request_revision", "reject", "hold_for_user", "rollback"}
 RISK_LEVELS = {"low", "medium", "high"}
+TASK_COMPLEXITIES = {"simple", "standard", "complex"}
 
 
 def _string_list(data: dict[str, Any], key: str) -> list[str]:
@@ -61,6 +62,9 @@ class WorkerPlanItem:
     test_commands: list[str] = field(default_factory=list)
     acceptance: list[str] = field(default_factory=list)
     context: str = ""
+    complexity: str = "standard"
+    attachments: list[str] = field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, index: int) -> "WorkerPlanItem":
@@ -76,6 +80,9 @@ class WorkerPlanItem:
             "test_commands",
             "acceptance",
             "context",
+            "complexity",
+            "attachments",
+            "depends_on",
         }
         unknown = sorted(set(data) - known)
         if unknown:
@@ -101,6 +108,11 @@ class WorkerPlanItem:
         context = data.get("context", "")
         if not isinstance(context, str):
             raise ValueError(f"workers[{index}].context must be a string")
+        complexity = data.get("complexity", "standard")
+        if complexity not in TASK_COMPLEXITIES:
+            raise ValueError(
+                f"workers[{index}].complexity must be simple, standard, or complex"
+            )
 
         return cls(
             worker_id=worker_id,
@@ -112,6 +124,9 @@ class WorkerPlanItem:
             test_commands=_string_list(data, "test_commands"),
             acceptance=_string_list(data, "acceptance"),
             context=context.strip(),
+            complexity=complexity,
+            attachments=_string_list(data, "attachments"),
+            depends_on=_string_list(data, "depends_on"),
         )
 
     def to_json(self) -> dict[str, Any]:
@@ -125,6 +140,9 @@ class WorkerPlanItem:
             "test_commands": list(self.test_commands),
             "acceptance": list(self.acceptance),
             "context": self.context,
+            "complexity": self.complexity,
+            "attachments": list(self.attachments),
+            "depends_on": list(self.depends_on),
         }
 
     def to_task_spec(self) -> str:
@@ -149,6 +167,9 @@ class WorkerPlanItem:
 - Worker id: `{self.worker_id}`
 - Worker role: `{self.role}`
 - Model profile: `{self.profile}`
+- Task complexity: `{self.complexity}`
+- Assigned attachment IDs: `{', '.join(self.attachments) or 'none'}`
+- Runs after: `{', '.join(self.depends_on) or 'no dependencies'}`
 - The expensive supervisor retains planning, final review, and merge authority.
 """
 
@@ -192,6 +213,32 @@ class WorkerPlan:
         ids = [item.worker_id for item in workers]
         if len(ids) != len(set(ids)):
             raise ValueError("Worker ids must be unique")
+        worker_ids = set(ids)
+        for worker in workers:
+            unknown_dependencies = sorted(set(worker.depends_on) - worker_ids)
+            if unknown_dependencies:
+                raise ValueError(
+                    f"Worker '{worker.worker_id}' has unknown dependencies: "
+                    + ", ".join(unknown_dependencies)
+                )
+            if worker.worker_id in worker.depends_on:
+                raise ValueError(f"Worker '{worker.worker_id}' cannot depend on itself")
+            if len(worker.depends_on) != len(set(worker.depends_on)):
+                raise ValueError(f"Worker '{worker.worker_id}' has duplicate dependencies")
+        remaining = {worker.worker_id: set(worker.depends_on) for worker in workers}
+        resolved: set[str] = set()
+        while remaining:
+            ready = sorted(
+                worker_id
+                for worker_id, dependencies in remaining.items()
+                if dependencies <= resolved
+            )
+            if not ready:
+                cycle = ", ".join(sorted(remaining))
+                raise ValueError(f"Worker dependency graph contains a cycle: {cycle}")
+            resolved.update(ready)
+            for worker_id in ready:
+                del remaining[worker_id]
 
         raw_task_id = data.get("task_id", "task")
         if not isinstance(raw_task_id, str):

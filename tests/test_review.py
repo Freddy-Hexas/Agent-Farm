@@ -1,6 +1,6 @@
 import unittest
 
-from agent_farm.models import AgentFarmConfig, ChangedFile, TestResult
+from agent_farm.models import AgentFarmConfig, ChangedFile, TestResult as FarmTestResult
 from agent_farm.review import count_diff_lines, path_matches, run_machine_review
 
 
@@ -52,7 +52,7 @@ class MachineReviewTests(unittest.TestCase):
     def test_failed_test_rejects(self):
         config = AgentFarmConfig(test_commands=["python -m unittest"])
         tests = [
-            TestResult(
+            FarmTestResult(
                 command="python -m unittest",
                 returncode=1,
                 log_file="tests/01.log",

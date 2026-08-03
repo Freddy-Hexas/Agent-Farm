@@ -11,7 +11,9 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        App.WriteMarker("MainWindow constructor entered");
         InitializeComponent();
+        App.WriteMarker("MainWindow XAML initialized");
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -21,6 +23,7 @@ public sealed partial class MainWindow : Window
         Activated += OnFirstActivated;
         AppWindow.Closing += OnWindowClosing;
         RootFrame.Navigate(typeof(MainPage));
+        App.WriteMarker("MainPage navigation returned");
     }
 
     private void ConfigureTitleBar()

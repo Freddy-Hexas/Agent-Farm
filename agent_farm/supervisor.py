@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config import config_from_dict, load_config
 from .native_agent import FINISH_TOOL, run_native_agent
@@ -22,6 +22,11 @@ def synthesize_farm_deliverable(
     farm_dir: Path,
     plan: WorkerPlan,
     config_path: Path | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    approval_callback: Callable[[dict[str, Any]], str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    attachment_context: str = "",
+    model_attachments: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Combine all passing Worker evidence into one user-visible artifact."""
 
@@ -85,6 +90,9 @@ Final deliverable path: `{plan.deliverable.path}`
 Synthesis instructions:
 {plan.deliverable.instructions}
 
+User attachment context:
+{attachment_context or "No user attachments were supplied."}
+
 Requirements:
 - Integrate material contributions from every Worker; do not merely choose one.
 - Resolve disagreements conservatively and distinguish sourced facts from analysis.
@@ -101,12 +109,22 @@ Requirements:
         ),
         provider=config.supervisor_provider or config.worker_provider,
         model=config.supervisor_model or config.worker_model,
-        timeout_seconds=config.supervisor_timeout_seconds,
+        timeout_seconds=None,
         writable=True,
         events_file=farm_dir / "supervisor-synthesis-events.jsonl",
         terminal_tool=FINISH_TOOL,
         reasoning_mode=config.supervisor_reasoning_mode,
         reasoning_effort=config.supervisor_reasoning_effort,
+        event_callback=event_callback,
+        approval_callback=approval_callback,
+        cancel_check=cancel_check,
+        model_attachments=model_attachments,
+        usage_context={
+            "farm_id": str(review_package.get("task_id") or ""),
+            "agent_id": "supervisor-synthesis",
+            "agent_kind": "supervisor",
+            "phase": "synthesis",
+        },
     )
     if not result.ok:
         raise SupervisorError(result.error or "Native Supervisor synthesis failed.")
@@ -158,6 +176,9 @@ WORKER_PLAN_SCHEMA: dict[str, Any] = {
                     "id",
                     "role",
                     "profile",
+                    "complexity",
+                    "attachments",
+                    "depends_on",
                     "goal",
                     "allowed_paths",
                     "forbidden_paths",
@@ -169,6 +190,12 @@ WORKER_PLAN_SCHEMA: dict[str, Any] = {
                     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
                     "role": {"type": "string", "minLength": 1},
                     "profile": {"type": "string", "minLength": 1},
+                    "complexity": {
+                        "type": "string",
+                        "enum": ["simple", "standard", "complex"],
+                    },
+                    "attachments": {"type": "array", "items": {"type": "string"}},
+                    "depends_on": {"type": "array", "items": {"type": "string"}},
                     "goal": {"type": "string", "minLength": 1},
                     "allowed_paths": {"type": "array", "items": {"type": "string"}},
                     "forbidden_paths": {"type": "array", "items": {"type": "string"}},
@@ -216,6 +243,7 @@ def _planner_prompt(
     base_ref: str,
     worker_count: int,
     profiles: list[str],
+    attachment_context: str = "",
 ) -> str:
     available = ", ".join(profiles)
     return f"""You are the expensive supervisor brain for Agent Farm.
@@ -231,6 +259,9 @@ Reserve architecture choices, synthesis, final review, and merge authority for t
 
 User request:
 {request}
+
+User attachment context:
+{attachment_context or "No user attachments were supplied."}
 
 Planning constraints:
 - Output only the JSON object required by the supplied schema.
@@ -250,6 +281,15 @@ Planning constraints:
 - Convert a requested output folder that is the repository root into a descriptive relative file
   inside that repository, such as `market-report.md`; never emit an absolute deliverable path.
 - Prefer the cheapest suitable profile. Use a stronger worker profile only where needed.
+- Classify every Worker as simple, standard, or complex. Simple means bounded lookup, formatting,
+  or a narrow low-risk edit; complex means architecture, difficult debugging, security-sensitive
+  work, or broad reasoning; everything else is standard. The runtime enforces the least expensive
+  configured route whose capability tier meets that classification.
+- Assign only the exact attachment IDs a Worker needs. Use the IDs shown in attachment context;
+  use an empty attachments array when the Worker does not need user files. Never broadcast every
+  attachment to every Worker by default.
+- Use depends_on to express real ordering constraints between Worker IDs. Keep it empty for
+  independent work so those Workers remain parallel; never create cycles.
 - Every worker must have a narrow allowed_paths allowlist grounded in this repository.
 - For a collaborative deliverable, assign different intermediate paths to Workers and ensure the
   deliverable path is not one of those Worker paths.
@@ -288,6 +328,11 @@ def draft_worker_plan(
     worker_count: int = 3,
     config_path: Path | None = None,
     output_dir: Path | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    approval_callback: Callable[[dict[str, Any]], str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    attachment_context: str = "",
+    model_attachments: list[dict[str, str]] | None = None,
 ) -> WorkerPlan:
     request = request.strip()
     if not request:
@@ -325,6 +370,7 @@ def draft_worker_plan(
         base_ref=base_ref,
         worker_count=worker_count,
         profiles=profiles,
+        attachment_context=attachment_context,
     )
     if config.agent_backend == "native":
         submit_schema = {
@@ -342,7 +388,7 @@ def draft_worker_plan(
             ),
             provider=config.supervisor_provider or config.worker_provider,
             model=config.supervisor_model or config.worker_model,
-            timeout_seconds=config.supervisor_timeout_seconds,
+            timeout_seconds=None,
             writable=False,
             events_file=artifacts / "supervisor-events.jsonl",
             terminal_tool={
@@ -352,6 +398,16 @@ def draft_worker_plan(
             },
             reasoning_mode=config.supervisor_reasoning_mode,
             reasoning_effort=config.supervisor_reasoning_effort,
+            event_callback=event_callback,
+            approval_callback=approval_callback,
+            cancel_check=cancel_check,
+            model_attachments=model_attachments,
+            usage_context={
+                "farm_id": selected_task_id,
+                "agent_id": "supervisor-planner",
+                "agent_kind": "supervisor",
+                "phase": "planning",
+            },
         )
         stderr_file.write_text(result.error or "", encoding="utf-8")
         if not result.ok:
@@ -389,7 +445,7 @@ def draft_worker_plan(
         command_result = run_command(
             args,
             repo_root,
-            timeout_seconds=config.supervisor_timeout_seconds,
+            timeout_seconds=None,
             input_text=planner_prompt,
         )
         stderr_file.write_text(command_result.stderr, encoding="utf-8")
@@ -430,6 +486,9 @@ def draft_supervisor_decision(
     repo_root: Path,
     farm_dir: Path,
     config_path: Path | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    approval_callback: Callable[[dict[str, Any]], str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> SupervisorDecision:
     repo_root = repo_root.resolve()
     farm_dir = farm_dir.resolve()
@@ -477,7 +536,7 @@ approve_merge. Call submit_supervisor_decision with your final structured decisi
         ),
         provider=config.supervisor_provider or config.worker_provider,
         model=config.supervisor_model or config.worker_model,
-        timeout_seconds=config.supervisor_timeout_seconds,
+        timeout_seconds=None,
         writable=False,
         events_file=farm_dir / "supervisor-review-events.jsonl",
         terminal_tool={
@@ -487,6 +546,15 @@ approve_merge. Call submit_supervisor_decision with your final structured decisi
         },
         reasoning_mode=config.supervisor_reasoning_mode,
         reasoning_effort=config.supervisor_reasoning_effort,
+        event_callback=event_callback,
+        approval_callback=approval_callback,
+        cancel_check=cancel_check,
+        usage_context={
+            "farm_id": farm_id,
+            "agent_id": "supervisor-review",
+            "agent_kind": "supervisor",
+            "phase": "review",
+        },
     )
     if not result.ok:
         raise SupervisorError(result.error or "Native Supervisor review failed.")

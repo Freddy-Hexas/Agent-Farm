@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="PaneBackgroundBrush" Color="#FFF2F2F0" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFCFCFB" />
+            <SolidColorBrush x:Key="SubtleBorderBrush" Color="#16000000" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#FF70706D" />
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FFE9F2EC" />
+            <SolidColorBrush x:Key="AvatarBackgroundBrush" Color="#FF20201F" />
+            <SolidColorBrush x:Key="AvatarForegroundBrush" Color="#FFFFFFFF" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="PaneBackgroundBrush" Color="#FF242423" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FF2B2B2A" />
+            <SolidColorBrush x:Key="SubtleBorderBrush" Color="#26FFFFFF" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#FFB6B6B2" />
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#FF213A2B" />
+            <SolidColorBrush x:Key="AvatarBackgroundBrush" Color="#FFF1F1EF" />
+            <SolidColorBrush x:Key="AvatarForegroundBrush" Color="#FF20201F" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+            <StaticResource x:Key="PaneBackgroundBrush" ResourceKey="SystemColorWindowColorBrush" />
+            <StaticResource x:Key="CardBackgroundBrush" ResourceKey="SystemColorWindowColorBrush" />
+            <StaticResource x:Key="SubtleBorderBrush" ResourceKey="SystemColorWindowTextColorBrush" />
+            <StaticResource x:Key="MutedTextBrush" ResourceKey="SystemColorWindowTextColorBrush" />
+            <StaticResource x:Key="AccentSoftBrush" ResourceKey="SystemColorHighlightColorBrush" />
+            <StaticResource x:Key="AvatarBackgroundBrush" ResourceKey="SystemColorHighlightColorBrush" />
+            <StaticResource x:Key="AvatarForegroundBrush" ResourceKey="SystemColorHighlightTextColorBrush" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

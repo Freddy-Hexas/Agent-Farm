@@ -16,13 +16,18 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
+from .approvals import ApprovalBroker
+from .attachments import AttachmentStore
+from .change_control import ChangeController, build_change_set
+from .checkpoints import CheckpointStore
 from .config import (
     AGENT_BACKENDS,
     APPROVAL_POLICIES,
+    BUDGET_POLICIES,
     LOCAL_CONFIG_FILE,
     MODEL_PROVIDER_FIELDS,
     SANDBOX_MODES,
@@ -34,16 +39,33 @@ from .config import (
 from .farm import record_supervisor_decision, review_farm, run_farm
 from .git_ops import find_repo_root
 from .model_client import DEFAULT_PROVIDERS
-from .plans import SupervisorDecision, WorkerPlan
+from .plans import SupervisorDecision, WorkerPlan, read_worker_plan
+from .protocol import (
+    ProtocolNegotiationError,
+    negotiate_protocol,
+    protocol_descriptor,
+)
 from .provider_catalog import discover_provider_models
 from .provider_templates import provider_templates
+from .daemon_runtime import RUNTIME_PROTOCOL_VERSION
+from .crash_recovery import CrashRecoveryReporter
+from .diagnostics import (
+    StructuredLogger,
+    create_diagnostic_bundle,
+    valid_correlation_id,
+)
+from .retention import ArtifactRetentionManager
+from .runtime_store import RuntimeStore
 from .secrets import load_secrets_env, update_secrets_env
 from .supervisor import draft_worker_plan
 from .threads import ThreadStore
+from .usage import price_catalog
+from .usage_report import farm_usage_report
 from .util import ensure_inside, read_json, run_command, write_json
 
 MAX_JSON_BODY = 1_000_000
 MAX_ARTIFACT_BYTES = 2_000_000
+TERMINAL_JOB_STATUSES = {"COMPLETED", "FAILED", "INTERRUPTED", "CANCELLED"}
 ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 PROVIDER_SETTINGS_FIELDS = {
     "template_id",
@@ -101,14 +123,59 @@ def _local_endpoint_reachable(base_url: Any) -> bool | None:
         return False
 
 
+def _sync_interrupted_thread(state: "ConsoleState", job: dict[str, Any]) -> None:
+    thread_id = job.get("thread_id")
+    turn_id = job.get("turn_id")
+    item_id = job.get("item_id")
+    if not all(isinstance(value, str) and value for value in (thread_id, turn_id, item_id)):
+        return
+    try:
+        thread = state.threads.read(thread_id)
+        turn = next(
+            (candidate for candidate in thread.get("turns", []) if candidate.get("turn_id") == turn_id),
+            None,
+        )
+        item = next(
+            (candidate for candidate in (turn or {}).get("items", []) if candidate.get("item_id") == item_id),
+            None,
+        )
+        if item is None or item.get("status") not in {"queued", "running"}:
+            return
+        payload = dict(item.get("payload") or {})
+        payload["error"] = job.get("error")
+        state.threads.update_item(
+            thread_id,
+            turn_id,
+            item_id,
+            status="interrupted",
+            payload=payload,
+        )
+        state.threads.update_turn(thread_id, turn_id, "interrupted")
+    except (FileNotFoundError, ValueError):
+        # Runtime recovery must not prevent the repository from opening if an
+        # independently persisted thread was removed or became unreadable.
+        return
+
+
 class JobRegistry:
     def __init__(self, state: "ConsoleState") -> None:
         self._state = state
-        self._lock = threading.Lock()
-        self._jobs: dict[str, dict[str, Any]] = {}
+        self._store = state.runtime_store
+        self._condition = threading.Condition()
+        self._generation = 0
+        self._cancel_lock = threading.RLock()
+        self._cancel_events: dict[str, tuple[threading.Event, dict[str, threading.Event]]] = {}
         # Each farm already parallelizes workers. Serializing farms prevents a browser
         # double-click from unexpectedly multiplying model spend.
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="farm-ui")
+        recovered = self._store.interrupt_active_jobs(
+            "farm",
+            interrupted_at=_utc_now(),
+            message="The Agent Farm runtime stopped before this Farm completed.",
+        )
+        self.recovered_count = len(recovered)
+        for job in recovered:
+            _sync_interrupted_thread(state, job)
 
     def submit(
         self,
@@ -116,8 +183,12 @@ class JobRegistry:
         *,
         thread_id: str | None = None,
         turn_id: str | None = None,
+        attachment_ids: list[str] | None = None,
+        correlation_id: str | None = None,
     ) -> dict[str, Any]:
         plan = WorkerPlan.from_dict(raw_plan)
+        attachment_ids = list(attachment_ids or [])
+        attachment_items = self._state.attachments.public_items(attachment_ids)
         farm_item_id: str | None = None
         if thread_id is not None:
             if not isinstance(thread_id, str):
@@ -133,13 +204,23 @@ class JobRegistry:
                 turn_id,
                 "farm_run",
                 status="queued",
-                payload={"task_id": plan.task_id, "farm_id": None},
+                payload={
+                    "task_id": plan.task_id,
+                    "farm_id": None,
+                    "attachments": attachment_items,
+                },
             )
             farm_item_id = item["item_id"]
         job_id = uuid.uuid4().hex[:12]
+        with self._cancel_lock:
+            self._cancel_events[job_id] = (
+                threading.Event(),
+                {worker.worker_id: threading.Event() for worker in plan.workers},
+            )
         plan_file = self._state.submissions_dir / f"{job_id}.json"
         write_json(plan_file, plan.to_json())
         job = {
+            "schema_version": 1,
             "job_id": job_id,
             "task_id": plan.task_id,
             "status": "QUEUED",
@@ -150,16 +231,28 @@ class JobRegistry:
             "thread_id": thread_id,
             "turn_id": turn_id,
             "item_id": farm_item_id,
+            "attachment_ids": attachment_ids,
+            "attachments": attachment_items,
             "error": None,
+            "correlation_id": valid_correlation_id(correlation_id),
         }
-        with self._lock:
-            self._jobs[job_id] = job
+        self._store.create_job("farm", job)
+        self._state.logger.log(
+            "farm.queued",
+            correlation_id=job["correlation_id"],
+            job_id=job_id,
+            task_id=plan.task_id,
+            worker_count=len(plan.workers),
+        )
         self._executor.submit(self._run, job_id, plan_file)
         return dict(job)
 
     def _run(self, job_id: str, plan_file: Path) -> None:
         self._update(job_id, status="RUNNING", started_at=_utc_now())
         job = self.get(job_id)
+        self._state.logger.log(
+            "farm.started", correlation_id=job.get("correlation_id"), job_id=job_id
+        )
         if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
             self._state.threads.update_item(
                 job["thread_id"],
@@ -170,12 +263,34 @@ class JobRegistry:
             )
             self._state.threads.update_turn(job["thread_id"], job["turn_id"], "running")
         try:
+            with self._cancel_lock:
+                job_cancel, worker_cancels = self._cancel_events[job_id]
             result = run_farm(
                 repo=self._state.repo_root,
                 plan_file=plan_file,
                 config_path=self._state.config_path,
+                event_callback=lambda event: self._append_event(job_id, event),
+                approval_callback=lambda request: self._state.approvals.request(
+                    job_kind="farm",
+                    job_id=job_id,
+                    request=request,
+                    event_callback=lambda event: self._append_event(job_id, event),
+                ),
+                cancel_check=job_cancel.is_set,
+                worker_cancel_checks={
+                    worker_id: event.is_set for worker_id, event in worker_cancels.items()
+                },
+                attachment_context=self._state.attachments.context_for(job.get("attachment_ids")),
+                model_attachments=self._state.attachments.model_inputs_for(job.get("attachment_ids")),
+                attachment_contexts=self._state.attachments.contexts_by_id(job.get("attachment_ids")),
+                model_attachments_by_id=self._state.attachments.model_inputs_by_id(
+                    job.get("attachment_ids")
+                ),
             )
         except Exception as exc:
+            if self._job_cancelled(job_id):
+                self._finish_cancelled(job_id, job)
+                return
             error = {"type": type(exc).__name__, "message": str(exc)}
             if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
                 self._state.threads.update_item(
@@ -188,6 +303,16 @@ class JobRegistry:
                 finished_at=_utc_now(),
                 error=error,
             )
+            self._state.logger.log(
+                "farm.failed",
+                level="ERROR",
+                correlation_id=job.get("correlation_id"),
+                job_id=job_id,
+                error=error,
+            )
+            return
+        if self._job_cancelled(job_id):
+            self._finish_cancelled(job_id, job)
             return
         if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
             self._state.threads.update_item(
@@ -218,36 +343,185 @@ class JobRegistry:
             finished_at=_utc_now(),
             farm_id=result.get("farm_id"),
         )
+        self._state.logger.log(
+            "farm.completed",
+            correlation_id=job.get("correlation_id"),
+            job_id=job_id,
+            farm_id=result.get("farm_id"),
+        )
+
+    def _job_cancelled(self, job_id: str) -> bool:
+        with self._cancel_lock:
+            cancellation = self._cancel_events.get(job_id)
+            return cancellation is not None and cancellation[0].is_set()
+
+    def _finish_cancelled(self, job_id: str, job: dict[str, Any]) -> None:
+        error = {"type": "Cancelled", "message": "Farm execution was cancelled by the user."}
+        if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
+            self._state.threads.update_item(
+                job["thread_id"],
+                job["turn_id"],
+                job["item_id"],
+                status="cancelled",
+                payload={"error": error},
+            )
+            self._state.threads.update_turn(job["thread_id"], job["turn_id"], "cancelled")
+        self._append_event(job_id, {"type": "job.cancelled", "error": error["message"]})
+        self._update(job_id, status="CANCELLED", finished_at=_utc_now(), error=error)
+
+    def cancel(self, job_id: str, *, worker_id: str | None = None) -> dict[str, Any]:
+        job = self.get(job_id)
+        if job["status"] in TERMINAL_JOB_STATUSES:
+            raise WebConsoleError("The Farm job has already finished.")
+        with self._cancel_lock:
+            try:
+                job_event, worker_events = self._cancel_events[job_id]
+            except KeyError as exc:
+                raise WebConsoleError("The Farm job is not active in this runtime.") from exc
+            if worker_id is None:
+                job_event.set()
+                for event in worker_events.values():
+                    event.set()
+            else:
+                _safe_id(worker_id, "worker id")
+                try:
+                    worker_events[worker_id].set()
+                except KeyError as exc:
+                    raise FileNotFoundError("Unknown Worker for this Farm job.") from exc
+        self._state.approvals.cancel_job("farm", job_id, agent_id=worker_id)
+        event = {
+            "type": "worker.cancel_requested" if worker_id else "job.cancel_requested",
+            "status": "cancelling",
+        }
+        if worker_id:
+            event.update({"agent_id": worker_id, "agent_kind": "worker"})
+        self._append_event(job_id, event)
+        return {
+            "job_id": job_id,
+            "worker_id": worker_id,
+            "status": "CANCELLING",
+        }
+
+    def retry(self, job_id: str, *, worker_id: str | None = None) -> dict[str, Any]:
+        previous = self.get(job_id)
+        if previous["status"] not in TERMINAL_JOB_STATUSES:
+            raise WebConsoleError("The Farm job must finish before it can be retried.")
+        plan_file = self._state.submissions_dir / f"{job_id}.json"
+        plan = read_worker_plan(plan_file)
+        if worker_id is not None:
+            _safe_id(worker_id, "worker id")
+            selected = next(
+                (worker for worker in plan.workers if worker.worker_id == worker_id),
+                None,
+            )
+            if selected is None:
+                raise FileNotFoundError("Unknown Worker for this Farm job.")
+            selected_payload = selected.to_json()
+            selected_payload["depends_on"] = []
+            retry_plan = {
+                "schema_version": 1,
+                "task_id": f"{plan.task_id}-retry-{worker_id}",
+                "base_ref": plan.base_ref,
+                "max_parallel": 1,
+                "workers": [selected_payload],
+                "deliverable": None,
+            }
+        else:
+            retry_plan = plan.to_json()
+            retry_plan["task_id"] = f"{plan.task_id}-retry"
+        retried = self.submit(
+            retry_plan,
+            thread_id=previous.get("thread_id"),
+            attachment_ids=previous.get("attachment_ids"),
+            correlation_id=previous.get("correlation_id"),
+        )
+        self._update(
+            retried["job_id"],
+            retry_of=job_id,
+            retry_worker_id=worker_id,
+        )
+        return self.get(retried["job_id"])
 
     def _update(self, job_id: str, **changes: Any) -> None:
-        with self._lock:
-            self._jobs[job_id].update(changes)
+        self._store.update_job("farm", job_id, changes, updated_at=_utc_now())
+        self._notify_change()
 
     def get(self, job_id: str) -> dict[str, Any]:
         _safe_id(job_id, "job id")
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                raise FileNotFoundError(f"Unknown job: {job_id}")
-            return dict(job)
+        return self._store.get_job("farm", job_id)
+
+    def _append_event(self, job_id: str, event: dict[str, Any]) -> None:
+        payload = dict(event)
+        payload.setdefault("schema_version", 1)
+        local_sequence = payload.pop("sequence", None)
+        if local_sequence is not None:
+            payload["local_sequence"] = local_sequence
+        payload.setdefault("timestamp", _utc_now())
+        try:
+            self._store.append_event("farm", job_id, payload)
+        except FileNotFoundError:
+            return
+        self._notify_change()
+
+    def generation(self) -> int:
+        with self._condition:
+            return self._generation
+
+    def wait_for_change(self, generation: int, timeout: float) -> bool:
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: self._generation != generation,
+                timeout=timeout,
+            )
+
+    def _notify_change(self) -> None:
+        with self._condition:
+            self._generation += 1
+            self._condition.notify_all()
+
+    def events(self, job_id: str, *, after: int = 0) -> dict[str, Any]:
+        _safe_id(job_id, "job id")
+        if after < 0:
+            raise ValueError("after must be zero or greater.")
+        job = self.get(job_id)
+        events = self._store.events("farm", job_id, after=after)
+        next_sequence = events[-1]["sequence"] if events else after
+        return {"events": events, "next_sequence": next_sequence, "status": job["status"]}
 
     def recent(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [dict(job) for job in reversed(list(self._jobs.values()))]
+        return self._store.recent_jobs("farm")
 
     def close(self) -> None:
+        with self._cancel_lock:
+            for job_event, worker_events in self._cancel_events.values():
+                job_event.set()
+                for event in worker_events.values():
+                    event.set()
         self._executor.shutdown(wait=False, cancel_futures=False)
 
 
 class PlanJobRegistry:
     def __init__(self, state: "ConsoleState") -> None:
         self._state = state
-        self._lock = threading.Lock()
-        self._jobs: dict[str, dict[str, Any]] = {}
+        self._store = state.runtime_store
+        self._condition = threading.Condition()
+        self._generation = 0
+        self._cancel_lock = threading.RLock()
+        self._cancel_events: dict[str, threading.Event] = {}
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="supervisor-ui")
+        recovered = self._store.interrupt_active_jobs(
+            "plan",
+            interrupted_at=_utc_now(),
+            message="The Agent Farm runtime stopped before planning completed.",
+        )
+        self.recovered_count = len(recovered)
+        for job in recovered:
+            _sync_interrupted_thread(state, job)
 
-    def submit(self, payload: dict[str, Any]) -> dict[str, Any]:
-        known = {"request", "task_id", "base_ref", "worker_count", "thread_id"}
+    def submit(
+        self, payload: dict[str, Any], *, correlation_id: str | None = None
+    ) -> dict[str, Any]:
+        known = {"request", "task_id", "base_ref", "worker_count", "thread_id", "attachments"}
         unknown = sorted(set(payload) - known)
         if unknown:
             raise ValueError("Unknown planning fields: " + ", ".join(unknown))
@@ -256,6 +530,8 @@ class PlanJobRegistry:
         base_ref = payload.get("base_ref", "HEAD")
         worker_count = payload.get("worker_count", 3)
         thread_id = payload.get("thread_id")
+        attachment_ids = payload.get("attachments", [])
+        attachment_items = self._state.attachments.public_items(attachment_ids)
         if not isinstance(request, str) or not request.strip():
             raise ValueError("request must be a non-empty string.")
         if task_id is not None and not isinstance(task_id, str):
@@ -270,19 +546,26 @@ class PlanJobRegistry:
             if not isinstance(thread_id, str):
                 raise ValueError("thread_id must be a string or null.")
             self._state.threads.read(thread_id)
-            turn = self._state.threads.start_turn(thread_id, request)
+            turn = self._state.threads.start_turn(
+                thread_id,
+                request,
+                attachments=attachment_items,
+            )
             turn_id = turn["turn_id"]
             item = self._state.threads.add_item(
                 thread_id,
                 turn_id,
                 "supervisor_plan",
                 status="queued",
-                payload={"request": request},
+                payload={"request": request, "attachments": attachment_items},
             )
             plan_item_id = item["item_id"]
 
         job_id = uuid.uuid4().hex[:12]
+        with self._cancel_lock:
+            self._cancel_events[job_id] = threading.Event()
         job = {
+            "schema_version": 1,
             "job_id": job_id,
             "status": "QUEUED",
             "created_at": _utc_now(),
@@ -292,10 +575,18 @@ class PlanJobRegistry:
             "thread_id": thread_id,
             "turn_id": turn_id,
             "item_id": plan_item_id,
+            "attachment_ids": list(attachment_ids),
+            "attachments": attachment_items,
             "error": None,
+            "correlation_id": valid_correlation_id(correlation_id),
         }
-        with self._lock:
-            self._jobs[job_id] = job
+        self._store.create_job("plan", job)
+        self._state.logger.log(
+            "plan.queued",
+            correlation_id=job["correlation_id"],
+            job_id=job_id,
+            worker_count=worker_count,
+        )
         self._executor.submit(
             self._run,
             job_id,
@@ -303,6 +594,7 @@ class PlanJobRegistry:
             task_id,
             base_ref,
             worker_count,
+            list(attachment_ids),
         )
         return dict(job)
 
@@ -313,18 +605,27 @@ class PlanJobRegistry:
         task_id: str | None,
         base_ref: str,
         worker_count: int,
+        attachment_ids: list[str],
     ) -> None:
         self._update(job_id, status="RUNNING", started_at=_utc_now())
         job = self.get(job_id)
+        self._state.logger.log(
+            "plan.started", correlation_id=job.get("correlation_id"), job_id=job_id
+        )
         if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
             self._state.threads.update_item(
                 job["thread_id"],
                 job["turn_id"],
                 job["item_id"],
                 status="running",
-                payload={"request": request},
+                payload={
+                    "request": request,
+                    "attachments": self._state.attachments.public_items(attachment_ids),
+                },
             )
         try:
+            with self._cancel_lock:
+                cancel_event = self._cancel_events[job_id]
             plan = draft_worker_plan(
                 repo_root=self._state.repo_root,
                 request=request,
@@ -333,8 +634,38 @@ class PlanJobRegistry:
                 worker_count=worker_count,
                 config_path=self._state.config_path,
                 output_dir=self._state.submissions_dir / f"supervisor-{job_id}",
+                attachment_context=self._state.attachments.context_for(attachment_ids),
+                model_attachments=self._state.attachments.model_inputs_for(attachment_ids),
+                event_callback=lambda event: self._append_event(
+                    job_id,
+                    {
+                        **event,
+                        "agent_id": "supervisor",
+                        "agent_kind": "supervisor",
+                        "display_name": "Planning Supervisor",
+                    },
+                ),
+                approval_callback=lambda request: self._state.approvals.request(
+                    job_kind="plan",
+                    job_id=job_id,
+                    request={
+                        **request,
+                        "agent_id": "supervisor",
+                        "agent_kind": "supervisor",
+                        "display_name": "Planning Supervisor",
+                        "provider": self._state.config.supervisor_provider
+                        or self._state.config.worker_provider,
+                        "model": self._state.config.supervisor_model
+                        or self._state.config.worker_model,
+                    },
+                    event_callback=lambda event: self._append_event(job_id, event),
+                ),
+                cancel_check=cancel_event.is_set,
             )
         except Exception as exc:
+            if self._job_cancelled(job_id):
+                self._finish_cancelled(job_id, job)
+                return
             error = {"type": type(exc).__name__, "message": str(exc)}
             if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
                 self._state.threads.update_item(
@@ -347,6 +678,16 @@ class PlanJobRegistry:
                 finished_at=_utc_now(),
                 error=error,
             )
+            self._state.logger.log(
+                "plan.failed",
+                level="ERROR",
+                correlation_id=job.get("correlation_id"),
+                job_id=job_id,
+                error=error,
+            )
+            return
+        if self._job_cancelled(job_id):
+            self._finish_cancelled(job_id, job)
             return
         if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
             self._state.threads.update_item(
@@ -365,24 +706,98 @@ class PlanJobRegistry:
             finished_at=_utc_now(),
             plan=plan.to_json(),
         )
+        self._state.logger.log(
+            "plan.completed", correlation_id=job.get("correlation_id"), job_id=job_id
+        )
+
+    def _job_cancelled(self, job_id: str) -> bool:
+        with self._cancel_lock:
+            event = self._cancel_events.get(job_id)
+            return event is not None and event.is_set()
+
+    def _finish_cancelled(self, job_id: str, job: dict[str, Any]) -> None:
+        error = {"type": "Cancelled", "message": "Supervisor planning was cancelled by the user."}
+        if job.get("thread_id") and job.get("turn_id") and job.get("item_id"):
+            self._state.threads.update_item(
+                job["thread_id"],
+                job["turn_id"],
+                job["item_id"],
+                status="cancelled",
+                payload={"error": error},
+            )
+            self._state.threads.update_turn(job["thread_id"], job["turn_id"], "cancelled")
+        self._append_event(job_id, {"type": "job.cancelled", "error": error["message"]})
+        self._update(job_id, status="CANCELLED", finished_at=_utc_now(), error=error)
+
+    def cancel(self, job_id: str) -> dict[str, Any]:
+        job = self.get(job_id)
+        if job["status"] in TERMINAL_JOB_STATUSES:
+            raise WebConsoleError("The planning job has already finished.")
+        with self._cancel_lock:
+            try:
+                self._cancel_events[job_id].set()
+            except KeyError as exc:
+                raise WebConsoleError("The planning job is not active in this runtime.") from exc
+        self._state.approvals.cancel_job("plan", job_id)
+        self._append_event(
+            job_id,
+            {"type": "job.cancel_requested", "status": "cancelling"},
+        )
+        return {"job_id": job_id, "status": "CANCELLING"}
 
     def _update(self, job_id: str, **changes: Any) -> None:
-        with self._lock:
-            self._jobs[job_id].update(changes)
+        self._store.update_job("plan", job_id, changes, updated_at=_utc_now())
+        self._notify_change()
 
     def get(self, job_id: str) -> dict[str, Any]:
         _safe_id(job_id, "plan job id")
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                raise FileNotFoundError(f"Unknown plan job: {job_id}")
-            return dict(job)
+        return self._store.get_job("plan", job_id)
+
+    def _append_event(self, job_id: str, event: dict[str, Any]) -> None:
+        payload = dict(event)
+        payload.setdefault("schema_version", 1)
+        local_sequence = payload.pop("sequence", None)
+        if local_sequence is not None:
+            payload["local_sequence"] = local_sequence
+        payload.setdefault("timestamp", _utc_now())
+        try:
+            self._store.append_event("plan", job_id, payload)
+        except FileNotFoundError:
+            return
+        self._notify_change()
+
+    def generation(self) -> int:
+        with self._condition:
+            return self._generation
+
+    def wait_for_change(self, generation: int, timeout: float) -> bool:
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: self._generation != generation,
+                timeout=timeout,
+            )
+
+    def _notify_change(self) -> None:
+        with self._condition:
+            self._generation += 1
+            self._condition.notify_all()
+
+    def events(self, job_id: str, *, after: int = 0) -> dict[str, Any]:
+        _safe_id(job_id, "plan job id")
+        if after < 0:
+            raise ValueError("after must be zero or greater.")
+        job = self.get(job_id)
+        events = self._store.events("plan", job_id, after=after)
+        next_sequence = events[-1]["sequence"] if events else after
+        return {"events": events, "next_sequence": next_sequence, "status": job["status"]}
 
     def recent(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [dict(job) for job in reversed(list(self._jobs.values()))]
+        return self._store.recent_jobs("plan")
 
     def close(self) -> None:
+        with self._cancel_lock:
+            for event in self._cancel_events.values():
+                event.set()
         self._executor.shutdown(wait=False, cancel_futures=False)
 
 
@@ -393,17 +808,53 @@ class ConsoleState:
 
     def __post_init__(self) -> None:
         self.repo_root = self.repo_root.resolve()
+        self.runtime_started_at = _utc_now()
+        self.runtime_root = (self.repo_root / ".agent-farm").resolve()
+        self.logger = StructuredLogger(self.runtime_root / "logs" / "events.jsonl")
+        self.crash_recovery = CrashRecoveryReporter(self.runtime_root)
+        self.crash_recovery.start()
         self._settings_lock = threading.RLock()
         self._model_catalog_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self.config = load_config(self.repo_root, self.config_path)
         self.farms_dir = (self.repo_root / self.config.farms_dir).resolve()
         self.submissions_dir = (self.repo_root / ".agent-farm" / "ui-submissions").resolve()
+        self.attachments_dir = (self.repo_root / ".agent-farm" / "ui-attachments").resolve()
         ensure_inside(self.repo_root, self.farms_dir)
         ensure_inside(self.repo_root, self.submissions_dir)
+        ensure_inside(self.repo_root, self.attachments_dir)
         self.submissions_dir.mkdir(parents=True, exist_ok=True)
         self.threads = ThreadStore(self.repo_root / ".agent-farm" / "threads")
+        self.attachments = AttachmentStore(self.attachments_dir)
+        self.runtime_store = RuntimeStore(self.runtime_root / "runtime.sqlite3")
+        self.checkpoints = CheckpointStore(
+            self.repo_root,
+            self.repo_root / ".agent-farm" / "checkpoints",
+        )
+        self.change_controller = ChangeController(self.repo_root, self.checkpoints)
+        self.approvals = ApprovalBroker()
         self.jobs = JobRegistry(self)
         self.plan_jobs = PlanJobRegistry(self)
+        self.crash_recovery.record_reconciliation(
+            self.jobs.recovered_count + self.plan_jobs.recovered_count
+        )
+        self.retention = ArtifactRetentionManager(
+            self.runtime_root,
+            retention_days=self.config.artifact_retention_days,
+            max_backups=self.config.max_runtime_backups,
+            max_diagnostics=self.config.max_diagnostic_bundles,
+        )
+        config_backup_path = (
+            self.config_path.resolve()
+            if self.config_path is not None
+            else self.repo_root / LOCAL_CONFIG_FILE
+        )
+        retention_result = self.retention.maintain(config_path=config_backup_path)
+        self.logger.log(
+            "runtime.started",
+            session_id=self.crash_recovery.session_id,
+            recovered_jobs=self.jobs.recovered_count + self.plan_jobs.recovered_count,
+            retention=retention_result,
+        )
 
     def _reload_config(self) -> None:
         config = load_config(self.repo_root, self.config_path)
@@ -412,6 +863,31 @@ class ConsoleState:
         self.config = config
         self.farms_dir = farms_dir
         self._model_catalog_cache.clear()
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "protocol_version": RUNTIME_PROTOCOL_VERSION,
+            "app": {"name": "Agent Farm", "version": __version__},
+            "pid": os.getpid(),
+            "repository": str(self.repo_root),
+            "started_at": self.runtime_started_at,
+            "runtime_fingerprint": os.environ.get("AGENT_FARM_RUNTIME_FINGERPRINT", __version__),
+            "recovery": self.crash_recovery.report,
+        }
+
+    def export_diagnostics(self) -> dict[str, Any]:
+        bundle = create_diagnostic_bundle(
+            self.repo_root,
+            sanitized_config=self._sanitized_config(),
+            recovery_report=self.crash_recovery.report,
+        )
+        self.retention.maintain()
+        self.logger.log("diagnostics.exported", path=bundle["path"], size_bytes=bundle["size_bytes"])
+        return bundle
+
+    def initialize_protocol(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return negotiate_protocol(payload)
 
     def _sanitized_config(self) -> dict[str, Any]:
         data = self.config.to_json()
@@ -518,10 +994,12 @@ class ConsoleState:
                 },
                 "provider_status": provider_status,
                 "provider_templates": provider_templates(),
+                "price_catalog": price_catalog(self.config.model_price_overrides),
                 "options": {
                     "agent_backends": sorted(AGENT_BACKENDS),
                     "sandbox_modes": sorted(SANDBOX_MODES),
                     "approval_policies": sorted(APPROVAL_POLICIES),
+                    "budget_policies": sorted(BUDGET_POLICIES),
                     "wire_apis": ["responses", "chat"],
                 },
             }
@@ -616,7 +1094,10 @@ class ConsoleState:
         return sorted(farms, key=lambda item: item.get("farm_id", ""), reverse=True)
 
     def farm_result(self, farm_id: str) -> dict[str, Any]:
-        return review_farm(self.farm_dir(farm_id))
+        farm_dir = self.farm_dir(farm_id)
+        result = review_farm(farm_dir)
+        result["usage"] = farm_usage_report(self.repo_root, farm_dir, result)
+        return result
 
     def review_package(self, farm_id: str) -> dict[str, Any]:
         path = self.farm_dir(farm_id) / "review-package.json"
@@ -641,6 +1122,33 @@ class ConsoleState:
         data = patch_path.read_bytes()
         truncated = len(data) > MAX_ARTIFACT_BYTES
         return data[:MAX_ARTIFACT_BYTES].decode("utf-8", errors="replace"), truncated
+
+    def change_sets(self, farm_id: str) -> list[dict[str, Any]]:
+        return self.change_controller.change_sets(self.farm_result(farm_id))
+
+    def worker_change_set(self, farm_id: str, worker_id: str) -> dict[str, Any]:
+        _safe_id(worker_id, "worker id")
+        return build_change_set(self.repo_root, self.farm_result(farm_id), worker_id)
+
+    def apply_candidate(self, farm_id: str, worker_id: str) -> dict[str, Any]:
+        _safe_id(worker_id, "worker id")
+        return self.change_controller.apply(self.farm_dir(farm_id), worker_id)
+
+    def merge_candidate(self, farm_id: str) -> dict[str, Any]:
+        return self.change_controller.merge(self.farm_dir(farm_id))
+
+    def rollback_candidate(
+        self,
+        farm_id: str,
+        checkpoint_id: str,
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        return self.change_controller.rollback(
+            self.farm_dir(farm_id),
+            checkpoint_id,
+            force=force,
+        )
 
     def decide(self, farm_id: str, raw_decision: dict[str, Any]) -> dict[str, Any]:
         farm_dir = self.farm_dir(farm_id)
@@ -743,11 +1251,17 @@ class ConsoleState:
             "farms": self.list_farms(),
             "jobs": self.jobs.recent(),
             "plan_jobs": self.plan_jobs.recent(),
+            "recovery": self.crash_recovery.report,
         }
 
     def close(self) -> None:
+        self.approvals.close()
         self.jobs.close()
         self.plan_jobs.close()
+        self.attachments.close()
+        self.retention.maintain()
+        self.logger.log("runtime.stopped", session_id=self.crash_recovery.session_id)
+        self.crash_recovery.mark_clean_shutdown()
 
 
 def _farm_summary(result: dict[str, Any]) -> dict[str, Any]:
@@ -784,10 +1298,24 @@ def _static_assets() -> dict[str, tuple[str, bytes]]:
 class ConsoleHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], state: ConsoleState) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        state: ConsoleState,
+        *,
+        serve_assets: bool = True,
+        stop_callback: Callable[[], None] | None = None,
+    ) -> None:
         self.state = state
-        self.assets = _static_assets()
+        self.assets = _static_assets() if serve_assets else {}
+        self.stop_callback = stop_callback
         super().__init__(address, ConsoleRequestHandler)
+
+    def request_stop(self) -> None:
+        if self.stop_callback is not None:
+            self.stop_callback()
+            return
+        threading.Thread(target=self.shutdown, name="agent-farm-http-stop", daemon=True).start()
 
 
 class ConsoleRequestHandler(BaseHTTPRequestHandler):
@@ -795,14 +1323,39 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, format: str, *args: Any) -> None:
-        print(f"[agent-farm-ui] {self.address_string()} {format % args}")
+        self.server.state.logger.log(
+            "http.access",
+            correlation_id=getattr(self, "_correlation_id", None),
+            client=self.client_address[0],
+            message=format % args,
+        )
+
+    def _begin_request(self, method: str) -> None:
+        self._correlation_id = valid_correlation_id(self.headers.get("X-Correlation-ID"))
+        self._request_started = time.monotonic()
+        self.server.state.logger.log(
+            "http.request",
+            correlation_id=self._correlation_id,
+            method=method,
+            path=urlsplit(self.path).path,
+        )
 
     def do_GET(self) -> None:  # noqa: N802
+        self._begin_request("GET")
         try:
             path = unquote(urlsplit(self.path).path)
             if path in self.server.assets:
                 content_type, body = self.server.assets[path]
                 self._send_bytes(HTTPStatus.OK, body, content_type)
+                return
+            if path == "/api/health":
+                self._send_json(HTTPStatus.OK, self.server.state.health())
+                return
+            if path == "/api/protocol":
+                self._send_json(HTTPStatus.OK, protocol_descriptor())
+                return
+            if path == "/api/protocol/schemas":
+                self._send_json(HTTPStatus.OK, protocol_descriptor(include_schemas=True))
                 return
             if path == "/api/bootstrap":
                 self._send_json(HTTPStatus.OK, self.server.state.bootstrap())
@@ -810,13 +1363,38 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/farms":
                 self._send_json(HTTPStatus.OK, {"farms": self.server.state.list_farms()})
                 return
+            if path == "/api/checkpoints":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"checkpoints": self.server.state.checkpoints.list()},
+                )
+                return
             if path == "/api/settings":
                 self._send_json(HTTPStatus.OK, self.server.state.settings())
+                return
+            if path == "/api/pricing":
+                self._send_json(
+                    HTTPStatus.OK,
+                    price_catalog(self.server.state.config.model_price_overrides),
+                )
                 return
             if path == "/api/threads":
                 self._send_json(HTTPStatus.OK, {"threads": self.server.state.threads.list()})
                 return
+            if path == "/api/approvals":
+                query = parse_qs(urlsplit(self.path).query)
+                status = query.get("status", [None])[0]
+                if status not in {None, "pending", "resolved"}:
+                    raise ValueError("status must be pending or resolved.")
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"approvals": self.server.state.approvals.list(status=status)},
+                )
+                return
             parts = [part for part in path.split("/") if part]
+            if len(parts) == 3 and parts[:2] == ["api", "approvals"]:
+                self._send_json(HTTPStatus.OK, self.server.state.approvals.get(parts[2]))
+                return
             if len(parts) == 3 and parts[:2] == ["api", "threads"]:
                 self._send_json(HTTPStatus.OK, self.server.state.threads.read(parts[2]))
                 return
@@ -843,14 +1421,69 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             if len(parts) == 3 and parts[:2] == ["api", "jobs"]:
                 self._send_json(HTTPStatus.OK, self.server.state.jobs.get(parts[2]))
                 return
+            if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "events":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    after = int(query.get("after", ["0"])[0])
+                except ValueError as exc:
+                    raise ValueError("after must be an integer.") from exc
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.jobs.events(parts[2], after=after),
+                )
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "stream":
+                self._stream_job_events(self.server.state.jobs, parts[2], "farm")
+                return
             if len(parts) == 3 and parts[:2] == ["api", "plan-jobs"]:
                 self._send_json(HTTPStatus.OK, self.server.state.plan_jobs.get(parts[2]))
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "plan-jobs"] and parts[3] == "events":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    after = int(query.get("after", ["0"])[0])
+                except ValueError as exc:
+                    raise ValueError("after must be an integer.") from exc
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.plan_jobs.events(parts[2], after=after),
+                )
+                return
+            if (
+                len(parts) == 4
+                and parts[:2] == ["api", "plan-jobs"]
+                and parts[3] == "stream"
+            ):
+                self._stream_job_events(self.server.state.plan_jobs, parts[2], "plan")
                 return
             if len(parts) == 3 and parts[:2] == ["api", "farms"]:
                 self._send_json(HTTPStatus.OK, self.server.state.farm_result(parts[2]))
                 return
             if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "review-package":
                 self._send_json(HTTPStatus.OK, self.server.state.review_package(parts[2]))
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "changesets":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"change_sets": self.server.state.change_sets(parts[2])},
+                )
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "checkpoints":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"checkpoints": self.server.state.checkpoints.list(farm_id=parts[2])},
+                )
+                return
+            if (
+                len(parts) == 6
+                and parts[:2] == ["api", "farms"]
+                and parts[3] == "workers"
+                and parts[5] == "changeset"
+            ):
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.worker_change_set(parts[2], parts[4]),
+                )
                 return
             if (
                 len(parts) == 6
@@ -866,13 +1499,40 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             self._handle_exception(exc)
 
     def do_POST(self) -> None:  # noqa: N802
+        self._begin_request("POST")
         try:
             self._check_origin()
             path = unquote(urlsplit(self.path).path)
             payload = self._read_json()
+            if path == "/api/runtime/stop":
+                if payload:
+                    raise ValueError("Runtime stop does not accept request fields.")
+                self._send_json(HTTPStatus.ACCEPTED, {"status": "stopping"})
+                self.server.request_stop()
+                return
+            if path == "/api/diagnostics/export":
+                if payload:
+                    raise ValueError("Diagnostic export does not accept request fields.")
+                self._send_json(HTTPStatus.CREATED, self.server.state.export_diagnostics())
+                return
+            if path == "/api/protocol/initialize":
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.initialize_protocol(payload),
+                )
+                return
+            if path == "/api/attachments":
+                unknown = sorted(set(payload) - {"local_path"})
+                if unknown:
+                    raise ValueError("Unknown attachment fields: " + ", ".join(unknown))
+                attachment = self.server.state.attachments.add(payload.get("local_path"))
+                self._send_json(HTTPStatus.CREATED, attachment.public_json())
+                return
             if path == "/api/farms":
                 if "plan" in payload:
-                    unknown = sorted(set(payload) - {"plan", "thread_id", "turn_id"})
+                    unknown = sorted(
+                        set(payload) - {"plan", "thread_id", "turn_id", "attachments"}
+                    )
                     if unknown:
                         raise ValueError("Unknown Farm submission fields: " + ", ".join(unknown))
                     raw_plan = payload.get("plan")
@@ -882,13 +1542,19 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                         raw_plan,
                         thread_id=payload.get("thread_id"),
                         turn_id=payload.get("turn_id"),
+                        attachment_ids=payload.get("attachments"),
+                        correlation_id=self._correlation_id,
                     )
                 else:
-                    job = self.server.state.jobs.submit(payload)
+                    job = self.server.state.jobs.submit(
+                        payload, correlation_id=self._correlation_id
+                    )
                 self._send_json(HTTPStatus.ACCEPTED, job)
                 return
             if path == "/api/plans":
-                job = self.server.state.plan_jobs.submit(payload)
+                job = self.server.state.plan_jobs.submit(
+                    payload, correlation_id=self._correlation_id
+                )
                 self._send_json(HTTPStatus.ACCEPTED, job)
                 return
             if path == "/api/settings":
@@ -898,9 +1564,152 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CREATED, self.server.state.create_thread(payload))
                 return
             parts = [part for part in path.split("/") if part]
+            if len(parts) == 4 and parts[:2] == ["api", "threads"]:
+                thread_id, action = parts[2], parts[3]
+                if action == "rename":
+                    self._send_json(
+                        HTTPStatus.OK,
+                        self.server.state.threads.rename(thread_id, str(payload.get("title", ""))),
+                    )
+                    return
+                if action in {"archive", "resume"}:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        self.server.state.threads.archive(thread_id, archived=action == "archive"),
+                    )
+                    return
+                if action == "fork":
+                    self._send_json(
+                        HTTPStatus.CREATED,
+                        self.server.state.threads.fork(thread_id, turn_id=payload.get("turn_id")),
+                    )
+                    return
+                if action == "delete":
+                    if payload:
+                        raise ValueError("Thread deletion does not accept request fields.")
+                    self.server.state.threads.delete(thread_id)
+                    self._send_json(HTTPStatus.OK, {"deleted": True, "thread_id": thread_id})
+                    return
+            if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "cancel":
+                if payload:
+                    raise ValueError("Farm cancellation does not accept request fields.")
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    self.server.state.jobs.cancel(parts[2]),
+                )
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "retry":
+                unknown = sorted(set(payload) - {"worker_id"})
+                if unknown:
+                    raise ValueError("Unknown retry fields: " + ", ".join(unknown))
+                worker_id = payload.get("worker_id")
+                if worker_id is not None and not isinstance(worker_id, str):
+                    raise ValueError("worker_id must be a string or null.")
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    self.server.state.jobs.retry(parts[2], worker_id=worker_id),
+                )
+                return
+            if (
+                len(parts) == 6
+                and parts[:2] == ["api", "jobs"]
+                and parts[3] == "workers"
+                and parts[5] == "cancel"
+            ):
+                if payload:
+                    raise ValueError("Worker cancellation does not accept request fields.")
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    self.server.state.jobs.cancel(parts[2], worker_id=parts[4]),
+                )
+                return
+            if (
+                len(parts) == 4
+                and parts[:2] == ["api", "plan-jobs"]
+                and parts[3] == "cancel"
+            ):
+                if payload:
+                    raise ValueError("Planning cancellation does not accept request fields.")
+                self._send_json(
+                    HTTPStatus.ACCEPTED,
+                    self.server.state.plan_jobs.cancel(parts[2]),
+                )
+                return
+            if (
+                len(parts) == 4
+                and parts[:2] == ["api", "approvals"]
+                and parts[3] == "decision"
+            ):
+                unknown = sorted(set(payload) - {"decision"})
+                if unknown:
+                    raise ValueError("Unknown approval fields: " + ", ".join(unknown))
+                decision = payload.get("decision")
+                if not isinstance(decision, str):
+                    raise ValueError("decision must be a string.")
+                resolved = self.server.state.approvals.respond(parts[2], decision)
+                if decision == "cancel":
+                    if resolved["job_kind"] == "farm":
+                        self.server.state.jobs.cancel(str(resolved["job_id"]))
+                    elif resolved["job_kind"] == "plan":
+                        self.server.state.plan_jobs.cancel(str(resolved["job_id"]))
+                self._send_json(HTTPStatus.OK, resolved)
+                return
             if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "decision":
                 result = self.server.state.decide(parts[2], payload)
                 self._send_json(HTTPStatus.OK, result)
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "apply":
+                unknown = sorted(set(payload) - {"worker_id"})
+                if unknown:
+                    raise ValueError("Unknown apply fields: " + ", ".join(unknown))
+                worker_id = payload.get("worker_id")
+                if not isinstance(worker_id, str) or not worker_id:
+                    raise ValueError("worker_id must be a non-empty string.")
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.apply_candidate(parts[2], worker_id),
+                )
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "merge":
+                if payload:
+                    raise ValueError("Merge does not accept request fields.")
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.merge_candidate(parts[2]),
+                )
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "farms"] and parts[3] == "rollback":
+                unknown = sorted(set(payload) - {"checkpoint_id", "force"})
+                if unknown:
+                    raise ValueError("Unknown rollback fields: " + ", ".join(unknown))
+                checkpoint_id = payload.get("checkpoint_id")
+                force = payload.get("force", False)
+                if not isinstance(checkpoint_id, str) or not checkpoint_id:
+                    raise ValueError("checkpoint_id must be a non-empty string.")
+                if type(force) is not bool:
+                    raise ValueError("force must be boolean.")
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.server.state.rollback_candidate(
+                        parts[2], checkpoint_id, force=force
+                    ),
+                )
+                return
+            self._send_error(HTTPStatus.NOT_FOUND, "Endpoint not found.")
+        except Exception as exc:
+            self._handle_exception(exc)
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        self._begin_request("DELETE")
+        try:
+            self._check_origin()
+            path = unquote(urlsplit(self.path).path)
+            parts = [part for part in path.split("/") if part]
+            if len(parts) == 3 and parts[:2] == ["api", "attachments"]:
+                removed = self.server.state.attachments.remove(parts[2])
+                if not removed:
+                    raise FileNotFoundError("Unknown attachment.")
+                self._send_json(HTTPStatus.OK, {"removed": True})
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Endpoint not found.")
         except Exception as exc:
@@ -913,6 +1722,54 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
         parsed = urlsplit(origin)
         if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
             raise PermissionError("Cross-origin requests are not allowed.")
+
+    def _stream_job_events(self, registry: Any, job_id: str, stream_kind: str) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            after = int(query.get("after", ["0"])[0])
+        except ValueError as exc:
+            raise ValueError("after must be an integer.") from exc
+        if after < 0:
+            raise ValueError("after must be zero or greater.")
+
+        # Validate the job before committing a streaming response status.
+        registry.get(job_id)
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Correlation-ID", self._correlation_id)
+        self.end_headers()
+        self.close_connection = True
+
+        try:
+            while True:
+                generation = registry.generation()
+                batch = registry.events(job_id, after=after)
+                for event in batch["events"]:
+                    after = int(event["sequence"])
+                    envelope = {
+                        "protocol_version": RUNTIME_PROTOCOL_VERSION,
+                        "stream": stream_kind,
+                        "job_id": job_id,
+                        "sequence": after,
+                        "event": event,
+                    }
+                    body = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+                    frame = f"id: {after}\nevent: {event['type']}\ndata: {body}\n\n"
+                    self.wfile.write(frame.encode("utf-8"))
+                self.wfile.flush()
+
+                if batch["status"] in TERMINAL_JOB_STATUSES:
+                    return
+                changed = registry.wait_for_change(generation, timeout=15)
+                if not changed:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            return
 
     def _read_json(self) -> dict[str, Any]:
         raw_length = self.headers.get("Content-Length")
@@ -937,10 +1794,22 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             status = HTTPStatus.NOT_FOUND
         elif isinstance(exc, PermissionError):
             status = HTTPStatus.FORBIDDEN
+        elif isinstance(exc, ProtocolNegotiationError):
+            status = HTTPStatus.CONFLICT
         elif isinstance(exc, (ValueError, WebConsoleError, json.JSONDecodeError)):
             status = HTTPStatus.BAD_REQUEST
         else:
             status = HTTPStatus.INTERNAL_SERVER_ERROR
+        self.server.state.logger.log(
+            "http.error",
+            level="ERROR" if status.value >= 500 else "WARNING",
+            correlation_id=getattr(self, "_correlation_id", None),
+            method=self.command,
+            path=urlsplit(self.path).path,
+            status=status.value,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         self._send_error(status, str(exc) or status.phrase)
 
     def _send_error(self, status: HTTPStatus, message: str) -> None:
@@ -958,6 +1827,7 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Correlation-ID", self._correlation_id)
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self'; "

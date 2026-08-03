@@ -5,7 +5,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .git_ops import find_repo_root
 from .web_server import ConsoleHTTPServer, ConsoleState
@@ -244,10 +244,22 @@ class DesktopRuntime:
     _closed: bool = False
 
     @classmethod
-    def start(cls, *, repo_root: Path, config_path: Path | None) -> "DesktopRuntime":
+    def start(
+        cls,
+        *,
+        repo_root: Path,
+        config_path: Path | None,
+        serve_assets: bool = True,
+        stop_callback: Callable[[], None] | None = None,
+    ) -> "DesktopRuntime":
         state = ConsoleState(repo_root=repo_root, config_path=config_path)
         try:
-            server = ConsoleHTTPServer(("127.0.0.1", 0), state)
+            server = ConsoleHTTPServer(
+                ("127.0.0.1", 0),
+                state,
+                serve_assets=serve_assets,
+                stop_callback=stop_callback,
+            )
         except Exception:
             state.close()
             raise

@@ -1,0 +1,107 @@
+name: Continuous integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    name: Python tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install Agent Farm and test dependencies
+        run: python -m pip install --upgrade pip pytest -e .
+      - name: Run the complete Python suite
+        run: python -m pytest -q
+
+  native-build:
+    name: Native WinUI build and MVVM tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Run platform-neutral MVVM state tests
+        run: dotnet run --project AgentFarm.Desktop.StateTests/AgentFarm.Desktop.StateTests.csproj
+      - name: Build native WinUI with warnings treated as errors
+        run: >-
+          dotnet build AgentFarm.Desktop/AgentFarm.Desktop.csproj
+          --configuration Debug
+          -p:Platform=x64
+          -warnaserror
+
+  native-ui:
+    name: Native WinUI automation
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install the source backend
+        run: python -m pip install -e .
+      - name: Enable packaged app development
+        shell: powershell
+        run: |
+          New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -Name AllowDevelopmentWithoutDevLicense -PropertyType DWord -Value 1 -Force | Out-Null
+      - name: Install Windows App Development CLI
+        shell: powershell
+        run: |
+          winget install --id Microsoft.WinAppCli --exact --source winget --silent --accept-package-agreements --accept-source-agreements
+          winapp --version
+      - name: Build the native application
+        run: >-
+          dotnet build AgentFarm.Desktop/AgentFarm.Desktop.csproj
+          --configuration Debug
+          -p:Platform=x64
+          -warnaserror
+      - name: Run the native UI batch
+        shell: powershell
+        run: |
+          $output = Resolve-Path "AgentFarm.Desktop\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64"
+          $launch = winapp run $output --detach --json | Out-String | ConvertFrom-Json
+          $appPid = [int]$launch.ProcessId
+          try {
+            .\scripts\test_native_ui.ps1 -AppPid $appPid
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          finally {
+            try { (Get-Process -Id $appPid -ErrorAction SilentlyContinue).CloseMainWindow() | Out-Null } catch {}
+          }
+      - name: Upload native UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ui-evidence
+          if-no-files-found: warn
+          path: |
+            test-artifacts/native-ui-tests/**
+            ${{ runner.temp }}/AgentFarmDiagnostics/**

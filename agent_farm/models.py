@@ -27,6 +27,7 @@ class TaskStatus(str, Enum):
     ROLLBACK_REQUESTED = "ROLLBACK_REQUESTED"
     ROLLED_BACK = "ROLLED_BACK"
     ABANDONED = "ABANDONED"
+    CANCELLED = "CANCELLED"
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,15 @@ class AgentFarmConfig:
     worker_codex_profile_v2: str | None = None
     secrets_env: str | None = ".agent-farm/secrets.env"
     model_providers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    model_price_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    worker_budget_usd: float | None = None
+    farm_budget_usd: float | None = None
+    monthly_budget_usd: float | None = None
+    budget_policy: str = "warn"
+    budget_warning_ratio: float = 0.8
+    provider_failure_threshold: int = 3
+    provider_cooldown_seconds: int = 60
+    max_worker_escalations: int = 1
     codex_config_overrides: dict[str, Any] = field(default_factory=dict)
     worker_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     default_worker_profile: str | None = None
@@ -150,7 +160,14 @@ class AgentFarmConfig:
     native_max_turns: int = 24
     native_command_timeout_seconds: int = 180
     native_max_output_chars: int = 24_000
+    native_sandbox_backend: str = "auto"
+    native_sandbox_memory_mb: int = 1024
+    native_sandbox_cpus: float = 2.0
+    native_sandbox_pids: int = 256
     test_timeout_seconds: int = 600
+    artifact_retention_days: int = 30
+    max_runtime_backups: int = 5
+    max_diagnostic_bundles: int = 10
     max_diff_lines: int = 800
     max_changed_files: int = 25
     allowed_paths: list[str] = field(default_factory=list)
@@ -189,6 +206,15 @@ class AgentFarmConfig:
             "worker_codex_profile_v2": self.worker_codex_profile_v2,
             "secrets_env": self.secrets_env,
             "model_providers": self.model_providers,
+            "model_price_overrides": self.model_price_overrides,
+            "worker_budget_usd": self.worker_budget_usd,
+            "farm_budget_usd": self.farm_budget_usd,
+            "monthly_budget_usd": self.monthly_budget_usd,
+            "budget_policy": self.budget_policy,
+            "budget_warning_ratio": self.budget_warning_ratio,
+            "provider_failure_threshold": self.provider_failure_threshold,
+            "provider_cooldown_seconds": self.provider_cooldown_seconds,
+            "max_worker_escalations": self.max_worker_escalations,
             "codex_config_overrides": self.codex_config_overrides,
             "worker_profiles": self.worker_profiles,
             "default_worker_profile": self.default_worker_profile,
@@ -202,7 +228,14 @@ class AgentFarmConfig:
             "native_max_turns": self.native_max_turns,
             "native_command_timeout_seconds": self.native_command_timeout_seconds,
             "native_max_output_chars": self.native_max_output_chars,
+            "native_sandbox_backend": self.native_sandbox_backend,
+            "native_sandbox_memory_mb": self.native_sandbox_memory_mb,
+            "native_sandbox_cpus": self.native_sandbox_cpus,
+            "native_sandbox_pids": self.native_sandbox_pids,
             "test_timeout_seconds": self.test_timeout_seconds,
+            "artifact_retention_days": self.artifact_retention_days,
+            "max_runtime_backups": self.max_runtime_backups,
+            "max_diagnostic_bundles": self.max_diagnostic_bundles,
             "max_diff_lines": self.max_diff_lines,
             "max_changed_files": self.max_changed_files,
             "allowed_paths": list(self.allowed_paths),

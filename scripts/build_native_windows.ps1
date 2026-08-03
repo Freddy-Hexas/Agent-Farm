@@ -10,6 +10,17 @@ $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $desktopProject = Join-Path $projectRoot "AgentFarm.Desktop\AgentFarm.Desktop.csproj"
 $workflow = Join-Path $env:USERPROFILE ".codex\plugins\cache\microsoft-winui\winui\0.3.0\skills\winui-dev-workflow\BuildAndRun.ps1"
+$runtimeOutput = Join-Path $projectRoot "AgentFarm.Desktop\bin\$Platform\$Configuration\net10.0-windows10.0.26100.0\win-$($Platform.ToLowerInvariant())"
+$backendTarget = Join-Path $runtimeOutput "Backend"
+
+if ($Configuration -eq "Release" -and (Test-Path -LiteralPath $backendTarget)) {
+    $resolvedOutput = [IO.Path]::GetFullPath($runtimeOutput).TrimEnd('\') + '\'
+    $resolvedTarget = [IO.Path]::GetFullPath($backendTarget)
+    if (-not $resolvedTarget.StartsWith($resolvedOutput, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean a backend target outside the Release output: $resolvedTarget"
+    }
+    Remove-Item -LiteralPath $resolvedTarget -Recurse -Force
+}
 
 if ($Configuration -eq "Release" -and -not $SkipBackend) {
     Push-Location $projectRoot
@@ -40,5 +51,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "The Agent Farm desktop build failed."
 }
 
-$output = Join-Path $projectRoot "AgentFarm.Desktop\bin\$Platform\$Configuration"
-Write-Host "Native Agent Farm build completed: $output"
+if ($Configuration -eq "Release") {
+    $backendSource = Join-Path $projectRoot "dist\AgentFarmBackend"
+    if (-not (Test-Path -LiteralPath (Join-Path $backendSource "AgentFarmBackend.exe"))) {
+        throw "The frozen backend is missing: $backendSource"
+    }
+    Copy-Item -LiteralPath $backendSource -Destination $backendTarget -Recurse -Force
+}
+
+Write-Host "Native Agent Farm build completed: $runtimeOutput"

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="AgentFarm_Desktop.Views.RunsSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:AgentFarm_Desktop.Models"
+    xmlns:views="using:AgentFarm_Desktop.Views">
+    <UserControl.Resources>
+        <DataTemplate x:Key="RunTemplate" x:DataType="models:FarmSummary">
+            <Grid Padding="6,10" ColumnSpacing="16">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel Spacing="4"><TextBlock FontSize="{StaticResource SubtitleFontSize}" FontWeight="SemiBold" Text="{x:Bind Title}" /><TextBlock FontSize="{StaticResource BodyFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind FarmId}" /></StackPanel>
+                <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="4"><TextBlock HorizontalAlignment="Right" FontSize="{StaticResource BodyFontSize}" Text="{x:Bind Status}" /><TextBlock HorizontalAlignment="Right" FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind Summary}" /></StackPanel>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Grid Padding="48,22,30,22">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <StackPanel Spacing="3">
+            <TextBlock x:Uid="RunsTitle" AutomationProperties.AutomationId="RunsViewTitle" FontSize="{StaticResource TitleFontSize}" FontWeight="SemiBold" Text="Run history" />
+            <TextBlock x:Uid="RunsDescription" FontSize="{StaticResource BodyFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="Completed and in-progress farms for this repository." />
+        </StackPanel>
+        <Grid Grid.Row="1" Margin="0,20,0,0" ColumnSpacing="20">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
+            <Border Background="{ThemeResource CardBackgroundBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource CardCornerRadius}">
+                <Grid>
+                    <ListView x:Name="RunsList" AutomationProperties.AutomationId="RunsList" AutomationProperties.Name="Run history" ItemTemplate="{StaticResource RunTemplate}" SelectionChanged="OnRunSelectionChanged" />
+                    <TextBlock x:Name="RunsEmptyState" x:Uid="RunsEmpty" AutomationProperties.AutomationId="RunsEmptyState" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{ThemeResource MutedTextBrush}" Text="No runs yet. Start a task to create the first Farm." TextAlignment="Center" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+            <views:ReviewSurface x:Name="ReviewControl" Grid.Column="1" Candidates="{x:Bind Candidates, Mode=OneWay}" Checkpoints="{x:Bind Checkpoints, Mode=OneWay}" ViewModel="{x:Bind ReviewViewModel, Mode=OneWay}" />
+        </Grid>
+    </Grid>
+</UserControl>

@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="AgentFarm_Desktop.Views.ComposerSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:AgentFarm_Desktop.Models"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <Style x:Key="ComposerIconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="{StaticResource AvatarCornerRadius}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="ComposerContextButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="{StaticResource CompactCornerRadius}" />
+            <Setter Property="FontSize" Value="{StaticResource BodyFontSize}" />
+        </Style>
+        <DataTemplate x:Key="AttachmentChipTemplate" x:DataType="models:AttachmentItem">
+            <Border
+                Height="34"
+                Margin="0,0,7,2"
+                Padding="9,0,3,0"
+                Background="{ThemeResource PaneBackgroundBrush}"
+                BorderBrush="{ThemeResource SubtleBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource ControlCornerRadius}">
+                <Grid ColumnSpacing="7">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource BodyStrongFontSize}"
+                        Foreground="{ThemeResource MutedTextBrush}"
+                        Glyph="{x:Bind Glyph}" />
+                    <TextBlock
+                        Grid.Column="1"
+                        MaxWidth="180"
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource BodyFontSize}"
+                        Text="{x:Bind Name}"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        Grid.Column="2"
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource CaptionFontSize}"
+                        Foreground="{ThemeResource MutedTextBrush}"
+                        Text="{x:Bind SizeLabel}" />
+                    <Button
+                        Grid.Column="3"
+                        Width="25"
+                        Height="25"
+                        Padding="0"
+                        AutomationProperties.Name="Remove attachment"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="OnRemoveAttachment"
+                CornerRadius="{StaticResource ComposerCornerRadius}"
+                        Tag="{x:Bind Id}"
+                        ToolTipService.ToolTip="Remove attachment">
+                        <FontIcon FontSize="{StaticResource CaptionFontSize}" Glyph="&#xE711;" />
+                    </Button>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid MinHeight="138" MaxWidth="736" HorizontalAlignment="Stretch">
+        <Border
+            Height="45"
+            Margin="13,0,13,0"
+            VerticalAlignment="Top"
+            Background="{ThemeResource PaneBackgroundBrush}"
+            BorderBrush="{ThemeResource SubtleBorderBrush}"
+            BorderThickness="1"
+                            CornerRadius="{StaticResource PillCornerRadius}">
+            <StackPanel
+                Margin="12,0,12,8"
+                VerticalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="{StaticResource BodyStrongFontSize}" Glyph="&#xE8B7;" />
+                    <TextBlock
+                        x:Name="RepositoryLabel"
+                        MaxWidth="240"
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource BodyFontSize}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="{StaticResource BodyStrongFontSize}" Glyph="&#xE7F4;" />
+                    <TextBlock x:Uid="LocalLabel" VerticalAlignment="Center" FontSize="{StaticResource BodyFontSize}" Text="Local" />
+                </StackPanel>
+                <Button
+                    AutomationProperties.Name="Edit base reference"
+                    Click="OnOpenTaskOptions"
+                    Style="{StaticResource ComposerContextButtonStyle}"
+                    ToolTipService.ToolTip="Edit the Git base reference">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="{StaticResource BodyStrongFontSize}" Glyph="&#xE8CE;" />
+                        <TextBlock x:Name="BaseRefLabel" VerticalAlignment="Center" Text="HEAD" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <Border
+            MinHeight="101"
+            Margin="0,37,0,0"
+            AllowDrop="True"
+            Background="{ThemeResource CardBackgroundBrush}"
+            BorderBrush="{ThemeResource SubtleBorderBrush}"
+            BorderThickness="1"
+                            CornerRadius="{StaticResource PillCornerRadius}"
+            DragOver="OnDragOver"
+            Drop="OnDrop">
+            <Grid Padding="8,6,8,7">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="32" />
+                </Grid.RowDefinitions>
+                <ScrollViewer
+                    x:Name="AttachmentTray"
+                    AutomationProperties.AutomationId="AttachmentTray"
+                    AutomationProperties.Name="Attached files"
+                    Margin="4,1,4,5"
+                    HorizontalScrollBarVisibility="Auto"
+                    HorizontalScrollMode="Enabled"
+                    VerticalScrollBarVisibility="Disabled"
+                    VerticalScrollMode="Disabled"
+                    Visibility="Collapsed">
+                    <ItemsRepeater
+                        x:Name="AttachmentRepeater"
+                        ItemTemplate="{StaticResource AttachmentChipTemplate}">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Orientation="Horizontal" Spacing="0" />
+                        </ItemsRepeater.Layout>
+                    </ItemsRepeater>
+                </ScrollViewer>
+                <TextBox
+                    x:Name="PromptBox"
+                    x:Uid="TaskPrompt"
+                    AutomationProperties.AutomationId="TaskPrompt"
+                    AutomationProperties.Name="Task prompt"
+                    Grid.Row="1"
+                    AcceptsReturn="True"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    FontSize="{StaticResource SubtitleFontSize}"
+                    KeyDown="OnPromptKeyDown"
+                    MaxHeight="90"
+                    MinHeight="50"
+                    Padding="4,3"
+                    PlaceholderText="Describe a task for the farm"
+                    TextWrapping="Wrap" />
+
+                <Grid Grid.Row="2" Margin="1,0,0,0" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        x:Name="AttachFilesButton"
+                        AutomationProperties.AutomationId="AttachFilesButton"
+                        AutomationProperties.Name="Add files"
+                        Click="OnAttachFiles"
+                        Style="{StaticResource ComposerIconButtonStyle}"
+                        ToolTipService.ToolTip="Add files">
+                        <FontIcon FontSize="{StaticResource SubtitleFontSize}" Glyph="&#xE710;" />
+                    </Button>
+                    <Button
+                        x:Name="TaskOptionsButton"
+                        Grid.Column="1"
+                        AutomationProperties.AutomationId="TaskOptionsButton"
+                        AutomationProperties.Name="Edit worker count"
+                        Click="OnOpenTaskOptions"
+                        Style="{StaticResource ComposerContextButtonStyle}"
+                        ToolTipService.ToolTip="Edit worker count">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="{StaticResource BodyStrongFontSize}" Glyph="&#xE716;" />
+                            <TextBlock x:Name="WorkerCountLabel" VerticalAlignment="Center" Text="3 Workers" />
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout Placement="TopEdgeAlignedLeft">
+                                <StackPanel Width="286" Spacing="12">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock x:Uid="TaskOptionsTitle" FontSize="{StaticResource SubtitleFontSize}" FontWeight="SemiBold" Text="Task options" />
+                                        <TextBlock
+                                            FontSize="{StaticResource SmallFontSize}"
+                                            Foreground="{ThemeResource MutedTextBrush}"
+                                            x:Uid="TaskOptionsDescription"
+                                            Text="Control parallelism and the Git starting point for this run."
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <NumberBox
+                                        x:Name="WorkerCountBox"
+                                        x:Uid="Workers"
+                                        AutomationProperties.AutomationId="WorkerCountBox"
+                                        Header="Workers"
+                                        Maximum="12"
+                                        Minimum="1"
+                                        SmallChange="1"
+                                        SpinButtonPlacementMode="Compact"
+                                        Value="3"
+                                        ValueChanged="OnWorkerCountChanged" />
+                                    <TextBox
+                                        x:Name="BaseRefBox"
+                                        x:Uid="BaseRef"
+                                        AutomationProperties.AutomationId="BaseRefBox"
+                                        Header="Base ref"
+                                        Text="HEAD"
+                                        TextChanged="OnBaseRefChanged" />
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button
+                        Grid.Column="3"
+                        MaxWidth="230"
+                        AutomationProperties.Name="Configure model routing"
+                        Click="OnConfigureRouting"
+                        Style="{StaticResource ComposerContextButtonStyle}"
+                        ToolTipService.ToolTip="Configure Supervisor and Worker models">
+                        <TextBlock
+                            x:Name="RouteLabel"
+                            MaxWidth="210"
+                            Foreground="{ThemeResource MutedTextBrush}"
+                            TextTrimming="CharacterEllipsis" />
+                    </Button>
+                    <Button
+                        x:Name="PlanButton"
+                        AutomationProperties.AutomationId="PlanButton"
+                        AutomationProperties.Name="Plan task"
+                        Grid.Column="4"
+                        Width="29"
+                        Height="29"
+                        Padding="0"
+                        Click="OnPlan"
+                    CornerRadius="{StaticResource IconButtonCornerRadius}"
+                        Style="{StaticResource AccentButtonStyle}"
+                        ToolTipService.ToolTip="Plan task (Ctrl+Enter)">
+                        <Grid>
+                            <FontIcon x:Name="PlanButtonIcon" FontSize="{StaticResource SubtitleFontSize}" Glyph="&#xE74A;" />
+                            <ProgressRing
+                                x:Name="PlanProgressRing"
+                                Width="16"
+                                Height="16"
+                                IsActive="False"
+                                Visibility="Collapsed" />
+                        </Grid>
+                    </Button>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

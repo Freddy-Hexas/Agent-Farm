@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from agent_farm.desktop import (
@@ -100,6 +101,29 @@ class DesktopRuntimeTests(unittest.TestCase):
                 runtime.close()
             self.assertFalse(runtime.server_thread.is_alive())
             runtime.close()  # Closing twice is intentionally safe.
+
+    def test_native_runtime_can_run_as_api_only_without_web_assets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git(root, "init")
+            (root / "README.md").write_text("desktop\n", encoding="utf-8")
+            git(root, "add", "README.md")
+            git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-m", "init")
+            runtime = DesktopRuntime.start(
+                repo_root=root,
+                config_path=None,
+                serve_assets=False,
+            )
+            try:
+                with self.assertRaises(HTTPError) as missing:
+                    urlopen(runtime.url, timeout=2)
+                self.assertEqual(getattr(missing.exception, "code", None), 404)
+                api_url = runtime.url.split("?", 1)[0].rstrip("/") + "/api/bootstrap"
+                with urlopen(api_url, timeout=2) as response:
+                    payload = json.loads(response.read())
+                self.assertEqual(payload["repository"]["name"], root.name)
+            finally:
+                runtime.close()
 
     def test_frameless_window_bridge_allows_only_window_chrome_actions(self):
         class FakeEvent:

@@ -1,78 +1,88 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace AgentFarm_Desktop.Services;
 
 internal sealed class AgentRuntimeProcess : IDisposable
 {
-    private const string ReadyPrefix = "AGENT_FARM_READY ";
-    private Process? _process;
-    private Task<string>? _stderrTask;
+    private const int RuntimeProtocolVersion = 1;
+    private Process? _startupProcess;
     private bool _disposed;
 
     public string? RepositoryRoot { get; private set; }
+    public Uri? RuntimeUri { get; private set; }
 
     public async Task<Uri> StartAsync(
         CancellationToken cancellationToken,
         string? requestedRepository = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_process is not null)
+        if (_startupProcess is not null || RuntimeUri is not null)
         {
-            throw new InvalidOperationException("The Agent Farm runtime is already running.");
+            throw new InvalidOperationException("The Agent Farm runtime is already connected.");
         }
 
         RepositoryRoot = FindRepositoryRoot(requestedRepository)
             ?? throw new DirectoryNotFoundException(
                 "Agent Farm could not locate a Git repository. Choose the project folder you want the agents to work in.");
 
-        var startInfo = CreateStartInfo(RepositoryRoot);
-        _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        if (!_process.Start())
+        var existing = await TryConnectAsync(RepositoryRoot, cancellationToken);
+        if (existing is not null)
         {
-            throw new InvalidOperationException("The Agent Farm runtime process could not be started.");
+            RuntimeUri = existing;
+            return existing;
         }
 
-        _stderrTask = _process.StandardError.ReadToEndAsync(cancellationToken);
+        var staleDescriptor = ReadRuntimeDescriptor(RepositoryRoot);
+        if (staleDescriptor is not null)
+        {
+            await RequestRuntimeStopAsync(staleDescriptor.Value.Uri, cancellationToken);
+        }
+
+        var startInfo = CreateStartInfo(RepositoryRoot);
+        _startupProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        if (!_startupProcess.Start())
+        {
+            throw new InvalidOperationException("The Agent Farm daemon process could not be started.");
+        }
+
         try
         {
-            while (true)
-            {
-                var line = await _process.StandardOutput.ReadLineAsync(cancellationToken);
-                if (line is null)
-                {
-                    var details = await ReadErrorOutputAsync();
-                    throw new InvalidOperationException(
-                        $"The Agent Farm runtime stopped before it was ready.{details}");
-                }
-
-                if (!line.StartsWith(ReadyPrefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                using var payload = JsonDocument.Parse(line[ReadyPrefix.Length..]);
-                var url = payload.RootElement.TryGetProperty("url", out var urlElement)
-                    ? urlElement.GetString()
-                    : null;
-                if (url is null || !Uri.TryCreate(url, UriKind.Absolute, out var runtimeUri))
-                {
-                    throw new InvalidOperationException("The Agent Farm runtime returned an invalid address.");
-                }
-
-                return runtimeUri;
-            }
+            var runtimeUri = await WaitForRuntimeAsync(RepositoryRoot, cancellationToken);
+            RuntimeUri = runtimeUri;
+            DetachStartupProcess();
+            return runtimeUri;
         }
-        catch
+        catch (OperationCanceledException)
         {
-            Stop();
+            StopStartupProcess();
+            throw;
+        }
+        catch (Exception exception)
+        {
+            StopStartupProcess();
+            var details = ReadRuntimeLogTail(RepositoryRoot);
+            if (details.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"The Agent Farm daemon did not become ready.\n\n{details}",
+                    exception);
+            }
             throw;
         }
     }
 
     public void Stop()
     {
-        var process = Interlocked.Exchange(ref _process, null);
+        RuntimeUri = null;
+        StopStartupProcess();
+    }
+
+    private void StopStartupProcess()
+    {
+        var process = Interlocked.Exchange(ref _startupProcess, null);
         if (process is null)
         {
             return;
@@ -104,7 +114,15 @@ internal sealed class AgentRuntimeProcess : IDisposable
         }
 
         _disposed = true;
+        // The repository daemon deliberately outlives the desktop window. Stop()
+        // only terminates a daemon that is still in its startup phase.
         Stop();
+    }
+
+    private void DetachStartupProcess()
+    {
+        var process = Interlocked.Exchange(ref _startupProcess, null);
+        process?.Dispose();
     }
 
     private static ProcessStartInfo CreateStartInfo(string repositoryRoot)
@@ -112,8 +130,8 @@ internal sealed class AgentRuntimeProcess : IDisposable
         var startInfo = new ProcessStartInfo
         {
             WorkingDirectory = repositoryRoot,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -150,8 +168,218 @@ internal sealed class AgentRuntimeProcess : IDisposable
 
         startInfo.ArgumentList.Add("--repo");
         startInfo.ArgumentList.Add(repositoryRoot);
+        startInfo.ArgumentList.Add("--daemon");
         startInfo.Environment["PYTHONUNBUFFERED"] = "1";
+        startInfo.Environment["AGENT_FARM_RUNTIME_FINGERPRINT"] = ExpectedRuntimeFingerprint();
         return startInfo;
+    }
+
+    private static async Task<Uri?> TryConnectAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        var descriptor = ReadRuntimeDescriptor(repositoryRoot);
+        if (descriptor is null)
+        {
+            return null;
+        }
+        return await IsHealthyAsync(descriptor.Value.Uri, repositoryRoot, cancellationToken)
+            ? descriptor.Value.Uri
+            : null;
+    }
+
+    private async Task<Uri> WaitForRuntimeAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var connected = await TryConnectAsync(repositoryRoot, cancellationToken);
+            if (connected is not null)
+            {
+                return connected;
+            }
+
+            var process = _startupProcess;
+            if (process is not null && process.HasExited && process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    $"The Agent Farm daemon exited during startup with code {process.ExitCode}.");
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+        }
+    }
+
+    private static (Uri Uri, int Pid)? ReadRuntimeDescriptor(string repositoryRoot)
+    {
+        var path = RuntimeDescriptorPath(repositoryRoot);
+        try
+        {
+            using var payload = JsonDocument.Parse(File.ReadAllText(path));
+            var root = payload.RootElement;
+            if (root.GetProperty("schema_version").GetInt32() != 1 ||
+                root.GetProperty("protocol_version").GetInt32() != RuntimeProtocolVersion)
+            {
+                return null;
+            }
+            var repository = root.GetProperty("repository").GetString();
+            var url = root.GetProperty("url").GetString();
+            var pid = root.GetProperty("pid").GetInt32();
+            if (repository is null ||
+                !Path.GetFullPath(repository).Equals(
+                    Path.GetFullPath(repositoryRoot),
+                    StringComparison.OrdinalIgnoreCase) ||
+                url is null ||
+                !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+            return (uri, pid);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<bool> IsHealthyAsync(
+        Uri runtimeUri,
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        var authority = runtimeUri.GetLeftPart(UriPartial.Authority);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(1));
+        using var client = new HttpClient { BaseAddress = new Uri(authority + "/") };
+        try
+        {
+            using var response = await client.GetAsync("api/health", timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                return false;
+            }
+            using var payload = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(timeout.Token),
+                cancellationToken: timeout.Token);
+            var root = payload.RootElement;
+            return root.GetProperty("status").GetString() == "ok" &&
+                   root.GetProperty("protocol_version").GetInt32() == RuntimeProtocolVersion &&
+                   root.TryGetProperty("runtime_fingerprint", out var fingerprint) &&
+                   fingerprint.GetString() == ExpectedRuntimeFingerprint() &&
+                   Path.GetFullPath(root.GetProperty("repository").GetString() ?? string.Empty).Equals(
+                       Path.GetFullPath(repositoryRoot),
+                       StringComparison.OrdinalIgnoreCase);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (KeyNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task RequestRuntimeStopAsync(
+        Uri runtimeUri,
+        CancellationToken cancellationToken)
+    {
+        var authority = runtimeUri.GetLeftPart(UriPartial.Authority);
+        using var client = new HttpClient { BaseAddress = new Uri(authority + "/") };
+        using var content = new ByteArrayContent("{}"u8.ToArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        content.Headers.ContentLength = 2;
+        try
+        {
+            using var response = await client.PostAsync("api/runtime/stop", content, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // A stale descriptor is harmless when its former process is already gone.
+        }
+    }
+
+    private static string ExpectedRuntimeFingerprint()
+    {
+#if DEBUG
+        var sourceRoot = FindSourceRoot();
+        if (sourceRoot is not null)
+        {
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var packageRoot = Path.Combine(sourceRoot, "agent_farm");
+            foreach (var path in Directory.EnumerateFiles(packageRoot, "*.py", SearchOption.AllDirectories)
+                         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var relative = Path.GetRelativePath(sourceRoot, path).Replace('\\', '/');
+                hash.AppendData(Encoding.UTF8.GetBytes(relative + "\n"));
+                hash.AppendData(File.ReadAllBytes(path));
+            }
+            return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        }
+#endif
+        return typeof(AgentRuntimeProcess).Assembly.GetName().Version?.ToString() ?? "unknown";
+    }
+
+    private static string RuntimeDescriptorPath(string repositoryRoot) =>
+        Path.Combine(repositoryRoot, ".agent-farm", "runtime.json");
+
+    private static string ReadRuntimeLogTail(string repositoryRoot)
+    {
+        var path = Path.Combine(repositoryRoot, ".agent-farm", "logs", "runtime.log");
+        try
+        {
+            var text = File.ReadAllText(path);
+            return text.Length <= 8000 ? text.Trim() : text[^8000..].Trim();
+        }
+        catch (IOException)
+        {
+            return string.Empty;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
     }
 
     private static string FindPythonExecutable()
@@ -314,17 +542,6 @@ internal sealed class AgentRuntimeProcess : IDisposable
             }
         }
         return null;
-    }
-
-    private async Task<string> ReadErrorOutputAsync()
-    {
-        if (_stderrTask is null)
-        {
-            return string.Empty;
-        }
-
-        var output = (await _stderrTask).Trim();
-        return output.Length == 0 ? string.Empty : $"\n\n{output}";
     }
 
 }

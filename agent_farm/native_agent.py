@@ -10,19 +10,54 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, getproxies
 
-from .model_client import ModelClientError, ModelSession, ToolCall, resolve_model_route
+from .model_client import (
+    ModelClientError,
+    ModelRequestCancelled,
+    ModelSession,
+    ToolCall,
+    resolve_model_route,
+)
+from .usage_store import BudgetManager, UsageLedger, default_usage_database
+from .provider_health import ProviderHealthStore
 from .models import AgentFarmConfig, CommandResult, RunPaths
 from .review import normalize_path, path_matches
-from .util import ensure_inside, run_command
+from .sandbox import SandboxError, SandboxManager
+from .util import ensure_inside
 
 
 class NativeAgentError(RuntimeError):
     pass
+
+
+class NativeAgentCancelled(RuntimeError):
+    pass
+
+
+IGNORED_SCAN_DIRECTORIES = frozenset(
+    {
+        ".agent-farm",
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        ".vs",
+        "__pycache__",
+        "artifacts",
+        "bin",
+        "build",
+        "dist",
+        "node_modules",
+        "obj",
+        "test-artifacts",
+        "venv",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +66,7 @@ class NativeAgentResult:
     final_text: str
     terminal_payload: dict[str, Any] | None = None
     error: str | None = None
+    cancelled: bool = False
 
 
 def _object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -227,10 +263,23 @@ class ToolRuntime:
         worktree: Path,
         config: AgentFarmConfig,
         writable: bool,
+        approval_callback: Callable[[dict[str, Any]], str] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> None:
         self.worktree = worktree.resolve()
         self.config = config
         self.writable = writable
+        self.approval_callback = approval_callback
+        self.cancel_check = cancel_check
+        self.sandbox = SandboxManager(
+            backend=config.native_sandbox_backend,
+            sandbox_mode=config.sandbox,
+            memory_mb=config.native_sandbox_memory_mb,
+            cpus=config.native_sandbox_cpus,
+            pids=config.native_sandbox_pids,
+            max_output_chars=config.native_max_output_chars,
+            forbidden_paths=config.forbidden_paths,
+        )
 
     def specs(self) -> list[dict[str, Any]]:
         tools = list(READ_TOOLS)
@@ -241,6 +290,7 @@ class ToolRuntime:
         return tools
 
     def execute(self, call: ToolCall) -> dict[str, Any]:
+        self._ensure_active()
         handlers = {
             "list_files": self._list_files,
             "search_text": self._search_text,
@@ -264,8 +314,126 @@ class ToolRuntime:
         handler = handlers.get(call.name)
         if handler is None:
             raise NativeAgentError(f"Unknown or unavailable tool: {call.name}")
+        self._request_approval(call)
+        self._ensure_active()
         result = handler(call.arguments)
-        return result if isinstance(result, dict) else {"result": result}
+        payload = result if isinstance(result, dict) else {"result": result}
+        payload.setdefault("capability_manifest", self.capability_manifest(call))
+        return payload
+
+    def capability_manifest(self, call: ToolCall) -> dict[str, Any]:
+        capability = "read"
+        network = "none"
+        network_hosts: list[str] = []
+        if call.name in {"write_file", "replace_text"}:
+            capability = "filesystem-write"
+        elif call.name == "run_command":
+            capability = "process"
+        elif call.name in WEB_TOOL_NAMES:
+            capability = "network"
+            network = "approved-public-http"
+            if call.name == "web_search":
+                network_hosts = ["www.bing.com"]
+            else:
+                raw_url = call.arguments.get("url")
+                if isinstance(raw_url, str) and urlsplit(raw_url).hostname:
+                    network_hosts = [str(urlsplit(raw_url).hostname).casefold()]
+        return {
+            "schema_version": 1,
+            "tool": call.name,
+            "capability": capability,
+            "filesystem_roots": [str(self.worktree)],
+            "network": network,
+            "network_hosts": network_hosts,
+            "sandbox_mode": self.config.sandbox,
+            "allowed_paths": list(self.config.allowed_paths),
+            "forbidden_paths": list(self.config.forbidden_paths),
+        }
+
+    def _ensure_active(self) -> None:
+        if self.cancel_check is not None and self.cancel_check():
+            raise NativeAgentCancelled("Execution was cancelled.")
+
+    def _request_approval(self, call: ToolCall) -> None:
+        if self.approval_callback is None:
+            return
+        if self.config.approval_policy not in {"on-request", "untrusted"}:
+            return
+        request = self._approval_request(call)
+        if request is None:
+            return
+        decision = self.approval_callback(request)
+        if decision in {"allow_once", "allow_session"}:
+            return
+        if decision == "cancel":
+            raise NativeAgentCancelled("Execution was cancelled from an approval request.")
+        if decision == "deny":
+            raise NativeAgentError(f"User denied {call.name}.")
+        raise NativeAgentError(f"Invalid approval decision for {call.name}: {decision}")
+
+    def _approval_request(self, call: ToolCall) -> dict[str, Any] | None:
+        if call.name in {"write_file", "replace_text"}:
+            path, relative = self._resolve(
+                call.arguments.get("path"),
+                file_required=call.name == "replace_text",
+            )
+            self._check_write(relative)
+            action = "Replace text in" if call.name == "replace_text" else "Write"
+            return {
+                "kind": "file_write",
+                "scope": "filesystem",
+                "tool_name": call.name,
+                "title": f"Allow {call.name}?",
+                "description": f"{action} {relative}",
+                "details": {
+                    "path": relative,
+                    "exists": path.exists(),
+                },
+            }
+        if call.name == "run_command":
+            argv = call.arguments.get("argv")
+            if (
+                not isinstance(argv, list)
+                or not argv
+                or any(not isinstance(item, str) for item in argv)
+            ):
+                raise NativeAgentError("argv must be a non-empty array of strings")
+            cwd, relative_cwd = self._resolve(call.arguments.get("cwd", "."))
+            if not cwd.is_dir():
+                raise NativeAgentError("Command cwd must be a directory")
+            self._validate_command(argv)
+            return {
+                "kind": "command",
+                "scope": "commands",
+                "tool_name": call.name,
+                "title": "Allow command?",
+                "description": "Run " + " ".join(argv),
+                "details": {"argv": list(argv), "cwd": relative_cwd},
+            }
+        if call.name == "web_search":
+            query = call.arguments.get("query")
+            if not isinstance(query, str) or not query.strip():
+                raise NativeAgentError("query must be a non-empty string")
+            return {
+                "kind": "network",
+                "scope": "network:www.bing.com",
+                "tool_name": call.name,
+                "title": "Allow web search?",
+                "description": query.strip(),
+                "details": {"query": query.strip()},
+            }
+        if call.name == "fetch_url":
+            url = self._validate_public_url(call.arguments.get("url"))
+            hostname = urlsplit(url).hostname or "unknown"
+            return {
+                "kind": "network",
+                "scope": f"network:{hostname.casefold()}",
+                "tool_name": call.name,
+                "title": "Allow network request?",
+                "description": url,
+                "details": {"url": url},
+            }
+        return None
 
     def _network_enabled(self) -> bool:
         return self.config.codex_config_overrides.get(
@@ -293,6 +461,8 @@ class ToolRuntime:
     def _check_write(self, relative: str) -> None:
         if not self.writable:
             raise NativeAgentError("This Agent is read-only.")
+        if self.config.sandbox == "read-only":
+            raise NativeAgentError("The configured sandbox is read-only.")
         if self._is_forbidden(relative):
             raise NativeAgentError(f"Write denied by forbidden path rule: {relative}")
         if self.config.allowed_paths and not any(
@@ -305,8 +475,14 @@ class ToolRuntime:
             yield root
             return
         for current, directories, filenames in os.walk(root):
-            directories[:] = [name for name in directories if name not in {".git", ".agent-farm"}]
-            for filename in filenames:
+            if self.cancel_check is not None and self.cancel_check():
+                raise NativeAgentCancelled("Tool execution was cancelled.")
+            directories[:] = sorted(
+                name for name in directories if name not in IGNORED_SCAN_DIRECTORIES
+            )
+            for filename in sorted(filenames):
+                if self.cancel_check is not None and self.cancel_check():
+                    raise NativeAgentCancelled("Tool execution was cancelled.")
                 path = Path(current) / filename
                 try:
                     relative = path.resolve().relative_to(self.worktree).as_posix()
@@ -603,7 +779,15 @@ class ToolRuntime:
         self._validate_command(argv)
         requested_timeout = int(args.get("timeout_seconds", self.config.native_command_timeout_seconds))
         timeout = min(requested_timeout, self.config.native_command_timeout_seconds)
-        result = run_command(argv, cwd, timeout_seconds=timeout)
+        result = self.sandbox.run(
+            argv,
+            worktree=self.worktree,
+            cwd=cwd,
+            timeout_seconds=timeout,
+            cancel_check=self.cancel_check,
+        )
+        if result.cancelled:
+            raise NativeAgentCancelled("Command execution was cancelled.")
         stdout = result.stdout[-self.config.native_max_output_chars :]
         stderr = result.stderr[-self.config.native_max_output_chars :]
         return {
@@ -613,7 +797,10 @@ class ToolRuntime:
             "timed_out": result.timed_out,
             "stdout": stdout,
             "stderr": stderr,
-            "output_truncated": len(result.stdout) > len(stdout) or len(result.stderr) > len(stderr),
+            "output_truncated": result.output_truncated
+            or len(result.stdout) > len(stdout)
+            or len(result.stderr) > len(stderr),
+            "sandbox": result.manifest,
         }
 
     @staticmethod
@@ -648,8 +835,13 @@ class ToolRuntime:
 
 
 class EventWriter:
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        callback: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self.path = path
+        self.callback = callback
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text("", encoding="utf-8")
         self.sequence = 0
@@ -664,6 +856,8 @@ class EventWriter:
         }
         with self.path.open("a", encoding="utf-8", newline="\n") as stream:
             stream.write(json.dumps(event, ensure_ascii=True) + "\n")
+        if self.callback is not None:
+            self.callback(dict(event))
 
 
 def _safe_event_arguments(call: ToolCall) -> dict[str, Any]:
@@ -697,16 +891,27 @@ def run_native_agent(
     system_prompt: str,
     provider: str | None,
     model: str | None,
-    timeout_seconds: int,
+    timeout_seconds: int | None,
     writable: bool,
     events_file: Path,
     terminal_tool: dict[str, Any],
     reasoning_mode: str | None = None,
     reasoning_effort: str | None = None,
     session: ModelSession | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    approval_callback: Callable[[dict[str, Any]], str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    model_attachments: list[dict[str, str]] | None = None,
+    usage_context: dict[str, Any] | None = None,
 ) -> NativeAgentResult:
-    runtime = ToolRuntime(worktree=worktree, config=config, writable=writable)
-    events = EventWriter(events_file)
+    runtime = ToolRuntime(
+        worktree=worktree,
+        config=config,
+        writable=writable,
+        approval_callback=approval_callback,
+        cancel_check=cancel_check,
+    )
+    events = EventWriter(events_file, event_callback)
     legacy_reasoning = config.codex_config_overrides.get("model_reasoning_effort")
     if legacy_reasoning is not None and not isinstance(legacy_reasoning, str):
         legacy_reasoning = None
@@ -719,12 +924,40 @@ def run_native_agent(
                 provider_id=provider,
                 model=model,
             )
+            effective_usage_context = {
+                "agent_kind": "worker",
+                "agent_id": events_file.parent.name,
+                **(usage_context or {}),
+            }
+            budget_manager = BudgetManager(
+                ledger=UsageLedger(default_usage_database()),
+                config=config,
+                repository=repo_root,
+                context=effective_usage_context,
+            )
+            provider_health = ProviderHealthStore(
+                default_usage_database(),
+                failure_threshold=config.provider_failure_threshold,
+                cooldown_seconds=config.provider_cooldown_seconds,
+            )
             session = ModelSession(
                 route=route,
                 system_prompt=system_prompt,
                 timeout_seconds=timeout_seconds,
                 reasoning_effort=selected_reasoning,
                 reasoning_mode=reasoning_mode,
+                event_callback=lambda event: events.emit(
+                    str(event.get("type") or "model.event"),
+                    **{key: value for key, value in event.items() if key != "type"},
+                ),
+                cancel_check=cancel_check,
+                pricing_overrides=config.model_price_overrides,
+                usage_context=effective_usage_context,
+                budget_guard=budget_manager.before_request,
+                usage_recorder=budget_manager.record,
+                provider_guard=provider_health.before_request,
+                provider_success_recorder=provider_health.record_success,
+                provider_failure_recorder=provider_health.record_failure,
             )
         except (ModelClientError, OSError, ValueError) as exc:
             events.emit("agent.failed", error=str(exc))
@@ -745,6 +978,8 @@ def run_native_agent(
     )
     try:
         for turn in range(1, config.native_max_turns + 1):
+            if cancel_check is not None and cancel_check():
+                raise NativeAgentCancelled("Execution was cancelled.")
             events.emit("turn.started", turn=turn)
             research_budget_exhausted = web_tool_calls >= WEB_RESEARCH_CALL_BUDGET or (
                 web_research_started and turn >= WEB_RESEARCH_TURN_DEADLINE
@@ -763,21 +998,39 @@ def run_native_agent(
                     turn=turn,
                     web_tool_calls=web_tool_calls,
                 )
-            reply = session.send(
-                prompt=turn_prompt,
-                tool_results=pending_results,
-                tools=turn_tools,
-            )
+            send_arguments: dict[str, Any] = {
+                "prompt": turn_prompt,
+                "tool_results": pending_results,
+                "tools": turn_tools,
+            }
+            if turn == 1 and model_attachments:
+                send_arguments["attachments"] = model_attachments
+            reply = session.send(**send_arguments)
+            if cancel_check is not None and cancel_check():
+                raise NativeAgentCancelled("Execution was cancelled.")
             pending_results = []
             if reply.text:
                 events.emit("item.completed", turn=turn, item={"type": "agent_message", "text": reply.text})
             terminal_payload: dict[str, Any] | None = None
             for call in reply.tool_calls:
+                if cancel_check is not None and cancel_check():
+                    raise NativeAgentCancelled("Execution was cancelled.")
                 events.emit(
                     "item.started",
                     turn=turn,
                     item={"type": "tool_call", "call_id": call.call_id, "name": call.name, "arguments": _safe_event_arguments(call)},
                 )
+                if call.name != terminal_name:
+                    events.emit(
+                        "tool.capability",
+                        turn=turn,
+                        item={
+                            "type": "capability_manifest",
+                            "call_id": call.call_id,
+                            "name": call.name,
+                            "manifest": runtime.capability_manifest(call),
+                        },
+                    )
                 if call.name == terminal_name:
                     terminal_payload = call.arguments
                     events.emit(
@@ -811,7 +1064,7 @@ def run_native_agent(
                     output = runtime.execute(call)
                     encoded = json.dumps({"ok": True, **output}, ensure_ascii=False)
                     status = "completed"
-                except (NativeAgentError, OSError, ValueError) as exc:
+                except (NativeAgentError, SandboxError, OSError, ValueError) as exc:
                     encoded = json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
                     status = "failed"
                 pending_results.append({"call_id": call.call_id, "output": encoded})
@@ -841,7 +1094,10 @@ def run_native_agent(
                     return NativeAgentResult(True, reply.text.strip() + "\n")
                 raise NativeAgentError("The model returned neither a message nor a tool call.")
         raise NativeAgentError(f"Native Agent reached the {config.native_max_turns}-turn limit.")
-    except (ModelClientError, NativeAgentError, OSError, ValueError) as exc:
+    except (ModelRequestCancelled, NativeAgentCancelled) as exc:
+        events.emit("agent.cancelled", error=str(exc))
+        return NativeAgentResult(False, "", error=str(exc), cancelled=True)
+    except (ModelClientError, NativeAgentError, SandboxError, OSError, ValueError) as exc:
         events.emit("agent.failed", error=str(exc))
         return NativeAgentResult(False, "", error=str(exc))
 
@@ -869,6 +1125,11 @@ def run_native_worker(
     prompt: str,
     model: str | None,
     timeout_seconds: int | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    approval_callback: Callable[[dict[str, Any]], str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    model_attachments: list[dict[str, str]] | None = None,
+    usage_context: dict[str, Any] | None = None,
 ) -> CommandResult:
     selected_model = model or config.worker_model
     result = run_native_agent(
@@ -879,19 +1140,24 @@ def run_native_worker(
         system_prompt=WORKER_SYSTEM_PROMPT,
         provider=config.worker_provider,
         model=selected_model,
-        timeout_seconds=timeout_seconds or config.timeout_seconds,
+        timeout_seconds=None,
         writable=True,
         events_file=paths.worker_events_file,
         terminal_tool=FINISH_TOOL,
         reasoning_mode=config.worker_reasoning_mode,
         reasoning_effort=config.worker_reasoning_effort,
+        event_callback=event_callback,
+        approval_callback=approval_callback,
+        cancel_check=cancel_check,
+        model_attachments=model_attachments,
+        usage_context=usage_context,
     )
     paths.worker_final_file.write_text(result.final_text, encoding="utf-8")
     paths.worker_stderr_file.write_text(result.error or "", encoding="utf-8")
     return CommandResult(
         args=["agent-farm-native", selected_model or ""],
         cwd=str(paths.worktree),
-        returncode=0 if result.ok else 1,
+        returncode=0 if result.ok else 130 if result.cancelled else 1,
         stdout=paths.worker_events_file.read_text(encoding="utf-8"),
         stderr=result.error or "",
     )

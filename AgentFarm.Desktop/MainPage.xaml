@@ -3,47 +3,323 @@
     x:Class="AgentFarm_Desktop.MainPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:AgentFarm_Desktop"
+    xmlns:models="using:AgentFarm_Desktop.Models"
+    xmlns:views="using:AgentFarm_Desktop.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Background="#F7F7F5"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     Loaded="OnLoaded"
     mc:Ignorable="d">
 
-    <Grid>
-        <WebView2 x:Name="AgentWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+    <Page.Resources>
+        <Style x:Key="PaneSplitterStyle" TargetType="controls:GridSplitter">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="IsThumbVisible" Value="False" />
+            <Setter Property="ResizeDirection" Value="Columns" />
+            <Setter Property="ResizeBehavior" Value="PreviousAndNext" />
+            <Setter Property="KeyboardIncrement" Value="8" />
+            <Setter Property="DragIncrement" Value="1" />
+        </Style>
+
+        <Style x:Key="SidebarButtonStyle" TargetType="Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="{StaticResource CompactCornerRadius}" />
+        </Style>
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource TitleFontSize}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource BodyFontSize}" />
+            <Setter Property="Foreground" Value="{ThemeResource MutedTextBrush}" />
+        </Style>
+
+        <DataTemplate x:Key="ThreadTemplate" x:DataType="models:ThreadSummary">
+            <Grid Padding="4,5">
+                <Grid.ContextFlyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem Click="OnResumeThread" Text="Resume" Tag="{x:Bind ThreadId}" />
+                        <MenuFlyoutItem Click="OnRenameThread" Text="Rename" Tag="{x:Bind ThreadId}" />
+                        <MenuFlyoutItem Click="OnForkThread" Text="Fork" Tag="{x:Bind ThreadId}" />
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem Click="OnArchiveThread" Text="Archive" Tag="{x:Bind ThreadId}" />
+                        <MenuFlyoutItem Click="OnDeleteThread" Text="Delete" Tag="{x:Bind ThreadId}" />
+                    </MenuFlyout>
+                </Grid.ContextFlyout>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    MaxLines="1"
+                    FontSize="{StaticResource BodyStrongFontSize}"
+                    Text="{x:Bind Title}"
+                    TextTrimming="CharacterEllipsis" />
+                <Grid Grid.Row="1" Margin="0,3,0,0" ColumnSpacing="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        FontSize="{StaticResource SmallFontSize}"
+                        Foreground="{ThemeResource MutedTextBrush}"
+                        Text="{x:Bind StatusLabel}" />
+                    <TextBlock
+                        Grid.Column="1"
+                        FontSize="{StaticResource SmallFontSize}"
+                        Foreground="{ThemeResource MutedTextBrush}"
+                        Text="{x:Bind UpdatedLabel}" />
+                </Grid>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ProfileSummaryTemplate" x:DataType="models:WorkerProfileSummary">
+            <StackPanel Padding="0,5" Spacing="3">
+                <TextBlock FontSize="{StaticResource BodyStrongFontSize}" FontWeight="SemiBold" Text="{x:Bind DisplayName}" />
+                <TextBlock FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind RouteDescription}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+
+    </Page.Resources>
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="OnNewTaskAccelerator" />
+        <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="OnSearchAccelerator" />
+        <KeyboardAccelerator Key="F6" Invoked="OnNextRegionAccelerator" />
+    </Page.KeyboardAccelerators>
+
+    <Grid x:Name="AppShell" SizeChanged="OnAppShellSizeChanged">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="LeftPaneColumn" Width="{StaticResource NavigationPaneWidth}" MinWidth="{StaticResource NavigationPaneMinWidth}" MaxWidth="{StaticResource NavigationPaneMaxWidth}" />
+            <ColumnDefinition x:Name="LeftPaneSplitterColumn" Width="{StaticResource PaneSplitterWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
         <Grid
-            x:Name="LoadingOverlay"
-            Background="#F7F7F5"
-            HorizontalAlignment="Stretch"
-            VerticalAlignment="Stretch">
-            <StackPanel
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="14">
-                <ProgressRing
-                    Width="28"
-                    Height="28"
-                    IsActive="True" />
+            x:Name="LeftPane"
+            Background="{ThemeResource PaneBackgroundBrush}"
+            Padding="12,10,10,12"
+            SizeChanged="OnLeftPaneSizeChanged">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Button
+                x:Name="RepositoryButton"
+                AutomationProperties.AutomationId="RepositoryButton"
+                AutomationProperties.Name="Switch repository"
+                Padding="8,5"
+                Background="Transparent"
+                Click="OnChooseRepository"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                ToolTipService.ToolTip="Switch repository">
+                <Grid ColumnSpacing="9">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="30" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="30" Height="30" Background="{ThemeResource AvatarBackgroundBrush}" CornerRadius="{StaticResource CompactCornerRadius}">
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="{StaticResource BodyFontSize}"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource AvatarForegroundBrush}"
+                            Text="AF" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <TextBlock
+                            FontSize="{StaticResource BodyStrongFontSize}"
+                            FontWeight="SemiBold"
+                            Text="{x:Bind ViewModel.RepositoryName, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            FontSize="{StaticResource SmallFontSize}"
+                            Foreground="{ThemeResource MutedTextBrush}"
+                            Text="{x:Bind ViewModel.Branch, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <FontIcon Grid.Column="2" FontSize="{StaticResource SmallFontSize}" Glyph="&#xE70D;" />
+                </Grid>
+            </Button>
+
+            <Button
+                x:Name="NewTaskButton"
+                Grid.Row="1"
+                AccessKey="N"
+                AutomationProperties.AutomationId="NewTaskButton"
+                AutomationProperties.Name="Create a new task"
+                Margin="0,12,0,8"
+                Click="OnNewTask"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                Style="{StaticResource AccentButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="{StaticResource BodyFontSize}" Glyph="&#xE710;" />
+                    <TextBlock x:Uid="NewTaskLabel" Text="New task" />
+                </StackPanel>
+            </Button>
+
+            <StackPanel Grid.Row="2" Spacing="2">
+                <Button x:Name="WorkspaceNavigationButton" AutomationProperties.AutomationId="WorkspaceNavigationButton" AutomationProperties.Name="Open workspace" Command="{x:Bind ViewModel.ShowWorkspaceCommand}" Style="{StaticResource SidebarButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="{StaticResource SubtitleFontSize}" Glyph="&#xE80F;" />
+                        <TextBlock x:Uid="WorkspaceLabel" Text="Workspace" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="RunsNavigationButton" AutomationProperties.AutomationId="RunsNavigationButton" AutomationProperties.Name="Open run history" Command="{x:Bind ViewModel.ShowRunsCommand}" Style="{StaticResource SidebarButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="{StaticResource SubtitleFontSize}" Glyph="&#xE9D9;" />
+                        <TextBlock x:Uid="RunsLabel" Text="Runs" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <Grid Grid.Row="3" Margin="8,14,4,5">
+                <TextBlock x:Uid="ThreadsLabel" FontSize="{StaticResource SmallFontSize}" FontWeight="SemiBold" Foreground="{ThemeResource MutedTextBrush}" Text="THREADS" />
+                <Button
+                    HorizontalAlignment="Right"
+                    Padding="4"
+                    AutomationProperties.AutomationId="RefreshThreadsButton"
+                    AutomationProperties.Name="Refresh threads"
+                    Background="Transparent"
+                    Click="OnRefresh"
+                    ToolTipService.ToolTip="Refresh data">
+                    <FontIcon FontSize="{StaticResource SmallFontSize}" Glyph="&#xE72C;" />
+                </Button>
+            </Grid>
+
+            <AutoSuggestBox
+                x:Name="ThreadSearchBox"
+                x:Uid="ThreadSearch"
+                AccessKey="F"
+                AutomationProperties.AutomationId="ThreadSearchBox"
+                AutomationProperties.Name="Search threads"
+                Grid.Row="4"
+                Margin="0,0,0,6"
+                PlaceholderText="Search threads"
+                QueryIcon="Find"
+                TextChanged="OnThreadSearchChanged" />
+
+            <ListView
+                x:Name="ThreadList"
+                AutomationProperties.AutomationId="ThreadList"
+                AutomationProperties.Name="Threads"
+                Grid.Row="5"
+                ItemTemplate="{StaticResource ThreadTemplate}"
+                ItemsSource="{x:Bind ViewModel.Threads, Mode=OneWay}"
+                SelectionChanged="OnThreadSelectionChanged"
+                SelectionMode="Single" />
+
+            <StackPanel Grid.Row="6" Spacing="2">
+                <Button x:Name="SettingsNavigationButton" AutomationProperties.AutomationId="SettingsNavigationButton" AutomationProperties.Name="Open settings" Command="{x:Bind ViewModel.ShowSettingsCommand}" Style="{StaticResource SidebarButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon FontSize="{StaticResource SubtitleFontSize}" Glyph="&#xE713;" />
+                        <TextBlock x:Uid="SettingsLabel" Text="Settings" />
+                    </StackPanel>
+                </Button>
                 <TextBlock
-                    Foreground="#6E6E6E"
-                    FontSize="13"
-                    Text="Starting Agent Farm..." />
+                    Margin="10,5,0,0"
+                    FontSize="{StaticResource CaptionFontSize}"
+                    Foreground="{ThemeResource MutedTextBrush}"
+                    x:Uid="NativeWorkspaceLabel"
+                    Text="Native WinUI workspace" />
             </StackPanel>
         </Grid>
 
-        <InfoBar
-            x:Name="StartupError"
-            Margin="20"
-            HorizontalAlignment="Stretch"
-            VerticalAlignment="Top"
-            IsClosable="True"
-            IsOpen="False"
-            Severity="Error"
-            Title="Agent Farm could not start">
-            <InfoBar.ActionButton>
-                <Button Click="OnChooseRepository" Content="Choose repository" />
-            </InfoBar.ActionButton>
-        </InfoBar>
+        <Rectangle
+            x:Name="LeftPaneDivider"
+            Grid.Column="1"
+            Width="1"
+            HorizontalAlignment="Center"
+            Fill="{ThemeResource SubtleBorderBrush}"
+            IsHitTestVisible="False" />
+        <controls:GridSplitter
+            x:Name="LeftPaneSplitter"
+            AutomationProperties.AutomationId="LeftPaneSplitter"
+            AutomationProperties.Name="Resize navigation pane"
+            Grid.Column="1"
+            DoubleTapped="OnLeftPaneSplitterDoubleTapped"
+            Style="{StaticResource PaneSplitterStyle}"
+            ToolTipService.ToolTip="Drag to resize navigation. Double-click to reset." />
+
+        <Grid Grid.Column="2">
+            <views:WorkspaceSurface x:Name="WorkspaceSurface" ViewModel="{x:Bind ViewModel, Mode=OneWay}" Visibility="{x:Bind local:MainPage.BoolToVisibility(ViewModel.Shell.IsWorkspaceVisible), Mode=OneWay}" />
+            <views:RunsSurface
+                x:Name="RunsSurface"
+                Candidates="{x:Bind ViewModel.CandidateChanges, Mode=OneWay}"
+                Checkpoints="{x:Bind ViewModel.Checkpoints, Mode=OneWay}"
+                ReviewViewModel="{x:Bind ViewModel.Review, Mode=OneWay}"
+                Runs="{x:Bind ViewModel.Runs, Mode=OneWay}"
+                Visibility="{x:Bind local:MainPage.BoolToVisibility(ViewModel.Shell.IsRunsVisible), Mode=OneWay}" />
+
+
+            <views:SettingsSurface x:Name="SettingsSurface" ViewModel="{x:Bind ViewModel, Mode=OneWay}" Visibility="{x:Bind local:MainPage.BoolToVisibility(ViewModel.Shell.IsSettingsVisible), Mode=OneWay}" />
+
+            <Button
+                x:Name="ToggleNavigationPaneButton"
+                AutomationProperties.AutomationId="ToggleNavigationPaneButton"
+                AutomationProperties.Name="Collapse navigation pane"
+                Width="30"
+                Height="30"
+                Margin="5,5,0,0"
+                Padding="0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="{ThemeResource CardBackgroundBrush}"
+                BorderBrush="{ThemeResource SubtleBorderBrush}"
+                BorderThickness="1"
+                Canvas.ZIndex="20"
+                Command="{x:Bind ViewModel.ToggleNavigationPaneCommand}"
+                CornerRadius="{StaticResource CompactCornerRadius}"
+                ToolTipService.ToolTip="Show or hide navigation">
+                <FontIcon x:Name="NavigationToggleIcon" FontSize="{StaticResource BodyFontSize}" Glyph="&#xE700;" />
+            </Button>
+
+            <Grid
+                x:Name="LoadingOverlay"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Visibility="{x:Bind local:MainPage.BoolToVisibility(ViewModel.RuntimeState.IsLoading), Mode=OneWay}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
+                    <ProgressRing Width="30" Height="30" IsActive="True" />
+                    <TextBlock x:Uid="LoadingLabel" FontSize="{StaticResource BodyStrongFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="Starting native Agent Farm…" />
+                </StackPanel>
+            </Grid>
+
+            <InfoBar
+                x:Name="StartupError"
+                x:Uid="StartupError"
+                Margin="20"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Top"
+                IsClosable="True"
+                IsOpen="False"
+                Severity="Error"
+                Title="Agent Farm could not start">
+                <InfoBar.ActionButton>
+                    <Button x:Uid="ChooseRepository" AutomationProperties.Name="Choose repository" Click="OnChooseRepository" Content="Choose repository" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+        </Grid>
     </Grid>
 </Page>

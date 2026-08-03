@@ -1,20 +1,23 @@
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
-
-
 project_root = Path(SPECPATH).parent
 
 analysis = Analysis(
     [str(project_root / "packaging" / "agent_farm_backend_entry.py")],
     pathex=[str(project_root)],
     binaries=[],
-    datas=collect_data_files("agent_farm", includes=["web/*"]),
+    # The WinUI desktop talks to an API-only loopback server. Browser-console
+    # HTML/CSS/JS stays in the Python source distribution and is intentionally
+    # absent from the native MSIX backend.
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["webview"],
+    # These optional pypdf image/data-analysis integrations are not used by
+    # Agent Farm's text attachment pipeline. Excluding them removes ~36 MB of
+    # native modules and avoids PRI treating Python ABI suffixes as qualifiers.
+    excludes=["webview", "PIL", "numpy", "yaml"],
     noarchive=False,
     optimize=1,
 )

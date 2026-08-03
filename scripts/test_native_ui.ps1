@@ -1,0 +1,195 @@
+param(
+    [Parameter(Mandatory)]
+    [int]$AppPid
+)
+
+$ErrorActionPreference = "Continue"
+$pass = 0
+$fail = 0
+$results = @()
+$artifactRoot = Join-Path $PSScriptRoot "..\test-artifacts\native-ui-tests"
+New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class PaneTestInput
+{
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+}
+"@
+
+function Test-UI {
+    param([string]$Name, [scriptblock]$Script)
+    try {
+        $output = & $Script 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $script:pass++
+            $script:results += @{ name = $Name; status = "PASS" }
+        }
+        else {
+            throw ($output -join "`n")
+        }
+    }
+    catch {
+        $script:fail++
+        $script:results += @{ name = $Name; status = "FAIL"; detail = "$_" }
+    }
+}
+
+function Get-ElementBounds {
+    param([string]$Selector)
+    $payload = winapp ui get-property $Selector -a $AppPid --json 2>$null | ConvertFrom-Json
+    $parts = @($payload.properties.BoundingRectangle -split ',' | ForEach-Object { [int]$_ })
+    return @{
+        X = $parts[0]
+        Y = $parts[1]
+        Width = $parts[2]
+        Height = $parts[3]
+    }
+}
+
+function Activate-Element {
+    param($Bounds)
+    $x = $Bounds.X + [int]($Bounds.Width / 2)
+    $y = $Bounds.Y + [int]($Bounds.Height / 2)
+    [PaneTestInput]::SetCursorPos($x, $y) | Out-Null
+    [PaneTestInput]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [PaneTestInput]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 250
+}
+
+Test-UI "Native repository picker exists" {
+    # A cold Debug launch may spend several seconds starting the Python daemon.
+    winapp ui wait-for RepositoryButton -a $AppPid -t 15000
+}
+Test-UI "Native task composer exists" {
+    winapp ui wait-for TaskPrompt -a $AppPid -t 5000
+}
+Test-UI "Native attachment picker entry point exists" {
+    winapp ui wait-for AttachFilesButton -a $AppPid -t 5000
+}
+Test-UI "Execution pane switches between plan and live output" {
+    winapp ui wait-for ExecutionSelector -a $AppPid -t 5000
+    winapp ui invoke LiveSelectorItem -a $AppPid
+    winapp ui wait-for LiveOutputList -a $AppPid -t 5000
+    winapp ui wait-for LiveOutputEmptyState -a $AppPid --value "Live model output will appear when planning or execution starts." -t 5000
+    winapp ui invoke PlanSelectorItem -a $AppPid
+    winapp ui wait-for WorkerPlanList -a $AppPid -t 5000
+}
+Test-UI "Task composer accepts text" {
+    winapp ui set-value TaskPrompt "Native WinUI smoke test" -a $AppPid
+    winapp ui wait-for TaskPrompt -a $AppPid --value "Native WinUI smoke test" -t 2000
+}
+Test-UI "Task options flyout works" {
+    winapp ui invoke TaskOptionsButton -a $AppPid
+    winapp ui wait-for WorkerCountBox -a $AppPid -t 5000
+    winapp ui wait-for BaseRefBox -a $AppPid -t 5000
+    winapp ui focus TaskPrompt -a $AppPid
+}
+Test-UI "Both side panes are independently draggable" {
+    Activate-Element (Get-ElementBounds LeftPaneSplitter)
+    winapp ui click LeftPaneSplitter -a $AppPid --double | Out-Null
+    Activate-Element (Get-ElementBounds RightPaneSplitter)
+    winapp ui click RightPaneSplitter -a $AppPid --double | Out-Null
+
+    $leftBefore = Get-ElementBounds LeftPaneSplitter
+    $leftTarget = "{0},{1}" -f ($leftBefore.X + 80), ($leftBefore.Y + [int]($leftBefore.Height / 2))
+    Activate-Element $leftBefore
+    winapp ui drag LeftPaneSplitter $leftTarget -a $AppPid --dwell-ms 150 | Out-Null
+    $leftAfter = Get-ElementBounds LeftPaneSplitter
+    if ($leftAfter.X -lt $leftBefore.X + 40) {
+        throw "The navigation splitter did not move right."
+    }
+
+    $rightBefore = Get-ElementBounds RightPaneSplitter
+    $rightTarget = "{0},{1}" -f ($rightBefore.X - 80), ($rightBefore.Y + [int]($rightBefore.Height / 2))
+    Activate-Element $rightBefore
+    winapp ui drag RightPaneSplitter $rightTarget -a $AppPid --dwell-ms 150 | Out-Null
+    $rightAfter = Get-ElementBounds RightPaneSplitter
+    if ($rightAfter.X -gt $rightBefore.X - 40) {
+        throw "The execution splitter did not move left."
+    }
+
+    Activate-Element (Get-ElementBounds LeftPaneSplitter)
+    winapp ui click LeftPaneSplitter -a $AppPid --double | Out-Null
+    Activate-Element (Get-ElementBounds RightPaneSplitter)
+    winapp ui click RightPaneSplitter -a $AppPid --double | Out-Null
+}
+Test-UI "Settings navigation works" {
+    winapp ui invoke SettingsNavigationButton -a $AppPid
+    winapp ui wait-for SupervisorProviderCombo -a $AppPid -t 5000
+}
+Test-UI "Provider settings navigation works" {
+    winapp ui invoke ProvidersSettingsButton -a $AppPid
+    winapp ui wait-for ProviderTemplateCombo -a $AppPid -t 5000
+    winapp ui wait-for ProviderApiKeyBox -a $AppPid -t 5000
+}
+Test-UI "Runs navigation works" {
+    winapp ui invoke RunsNavigationButton -a $AppPid
+    winapp ui wait-for RunsViewTitle -a $AppPid --value "Run history" -t 5000
+}
+Test-UI "Workspace navigation works" {
+    winapp ui invoke WorkspaceNavigationButton -a $AppPid
+    winapp ui wait-for PlanButton -a $AppPid -t 5000
+}
+Test-UI "Notification queue opens with an explicit empty state" {
+    winapp ui invoke NotificationCenterButton -a $AppPid
+    winapp ui wait-for NotificationQueue -a $AppPid -t 5000
+    winapp ui wait-for NotificationEmptyState -a $AppPid --value "No notifications yet." -t 5000
+    winapp ui focus TaskPrompt -a $AppPid
+}
+Test-UI "Global keyboard shortcuts move focus predictably" {
+    winapp ui focus TaskPrompt -a $AppPid
+    winapp ui send-keys ctrl+f -a $AppPid --via send-input
+    winapp ui wait-for ThreadSearchBox -a $AppPid -p HasKeyboardFocus --value True -t 5000
+    winapp ui send-keys ctrl+n -a $AppPid --via send-input
+    winapp ui wait-for TaskPrompt -a $AppPid -p HasKeyboardFocus --value True -t 5000
+}
+Test-UI "Settings exports a real sanitized diagnostic bundle" {
+    winapp ui invoke SettingsNavigationButton -a $AppPid
+    winapp ui wait-for ExportDiagnosticsButton -a $AppPid -t 5000
+    winapp ui invoke ExportDiagnosticsButton -a $AppPid
+    $deadline = (Get-Date).AddSeconds(10)
+    do {
+        Start-Sleep -Milliseconds 250
+        $property = winapp ui get-property DiagnosticBundlePath -a $AppPid --json 2>$null | ConvertFrom-Json
+        $serialized = $property | ConvertTo-Json -Compress -Depth 5
+    } while ($serialized -notmatch '\.zip' -and (Get-Date) -lt $deadline)
+    if ($serialized -notmatch '\.zip') {
+        throw "The Settings surface did not report an exported diagnostic ZIP."
+    }
+    $match = [regex]::Match($serialized, '[A-Za-z]:\\[^\"}]+\.zip')
+    if ($match.Success -and -not (Test-Path -LiteralPath $match.Value)) {
+        throw "The reported diagnostic ZIP does not exist: $($match.Value)"
+    }
+}
+Test-UI "Settings exposes release channels and verified update actions" {
+    winapp ui wait-for ReleaseChannelCombo -a $AppPid -t 5000
+    winapp ui wait-for CheckUpdatesButton -a $AppPid -t 5000
+    winapp ui wait-for InstallUpdateButton -a $AppPid -t 5000
+    winapp ui wait-for UpdateStatusText -a $AppPid -t 5000
+}
+Test-UI "Desktop source contains no WebView host" {
+    $source = Get-Content (Join-Path $PSScriptRoot "..\AgentFarm.Desktop\MainPage.xaml"), (Join-Path $PSScriptRoot "..\AgentFarm.Desktop\MainPage.xaml.cs") -Raw
+    if ($source -match "WebView2|CoreWebView2|AgentWebView") {
+        throw "A browser host remains in the desktop workspace."
+    }
+}
+
+winapp ui screenshot -a $AppPid -o (Join-Path $artifactRoot "workspace.png") 2>$null
+winapp ui invoke SettingsNavigationButton -a $AppPid 2>$null
+winapp ui screenshot -a $AppPid -o (Join-Path $artifactRoot "settings.png") 2>$null
+winapp ui invoke ProvidersSettingsButton -a $AppPid 2>$null
+winapp ui screenshot -a $AppPid -o (Join-Path $artifactRoot "providers.png") 2>$null
+
+Write-Host "Passed: $pass | Failed: $fail"
+$results | Where-Object { $_.status -eq "FAIL" } | ForEach-Object {
+    Write-Host "  FAIL: $($_.name) - $($_.detail)" -ForegroundColor Red
+}
+$results | ConvertTo-Json -Depth 4 | Out-File -Encoding utf8 (Join-Path $artifactRoot "results.json")
+if ($fail -gt 0) { exit 1 }

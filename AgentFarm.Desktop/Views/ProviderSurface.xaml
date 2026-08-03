@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="AgentFarm_Desktop.Views.ProviderSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:AgentFarm_Desktop.Models">
+    <UserControl.Resources>
+        <DataTemplate x:Key="ProviderEditorTemplate" x:DataType="models:ProviderEditor">
+            <StackPanel Padding="2,6" Spacing="3">
+                <TextBlock FontSize="{StaticResource BodyStrongFontSize}" FontWeight="SemiBold" Text="{x:Bind DisplayName, Mode=OneWay}" />
+                <TextBlock FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind Status, Mode=OneWay}" />
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+    <StackPanel MaxWidth="1000" Margin="30,14,30,28" HorizontalAlignment="Stretch" Spacing="18">
+        <StackPanel Spacing="3">
+            <TextBlock x:Uid="ProvidersTitle" FontSize="{StaticResource SectionFontSize}" FontWeight="SemiBold" Text="Providers" />
+            <TextBlock x:Uid="ProvidersDescription" Foreground="{ThemeResource MutedTextBrush}" Text="Start from an official template or add any OpenAI-compatible endpoint." />
+        </StackPanel>
+        <Border Padding="18" Background="{ThemeResource CardBackgroundBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource CardCornerRadius}">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <ComboBox x:Name="TemplateCombo" x:Uid="ProviderTemplate" AutomationProperties.AutomationId="ProviderTemplateCombo" AutomationProperties.Name="Provider template" Header="Provider template" DisplayMemberPath="DisplayLabel" SelectedValuePath="Id" />
+                <Button x:Uid="AddProvider" Grid.Column="1" VerticalAlignment="Bottom" AutomationProperties.AutomationId="AddProviderButton" AutomationProperties.Name="Add provider" Click="OnAdd" Content="Add provider" />
+            </Grid>
+        </Border>
+        <Border Padding="18" Background="{ThemeResource CardBackgroundBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource CardCornerRadius}">
+            <Grid ColumnSpacing="18">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="270" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <ListView x:Name="ProviderList" AutomationProperties.AutomationId="ProviderList" AutomationProperties.Name="Configured providers" Height="460" ItemTemplate="{StaticResource ProviderEditorTemplate}" SelectionChanged="OnSelectionChanged" />
+                <StackPanel x:Name="EditorPanel" Grid.Column="1" Spacing="10">
+                    <TextBox x:Uid="ProviderId" AutomationProperties.AutomationId="ProviderIdBox" AutomationProperties.Name="Provider ID" Header="Provider ID" IsReadOnly="True" Text="{Binding Id, Mode=OneWay}" />
+                    <TextBox x:Uid="ProviderDisplayName" AutomationProperties.AutomationId="ProviderDisplayNameBox" AutomationProperties.Name="Provider display name" Header="Display name" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Uid="ProviderBaseUrl" AutomationProperties.AutomationId="ProviderBaseUrlBox" AutomationProperties.Name="Provider base URL" Header="Base URL" Text="{Binding BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox x:Uid="ProviderEnvironmentKey" AutomationProperties.AutomationId="ProviderEnvironmentKeyBox" AutomationProperties.Name="API key environment variable" Header="API key environment variable" Text="{Binding EnvKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <ComboBox x:Name="WireApiCombo" x:Uid="ProviderWireApi" AutomationProperties.AutomationId="ProviderWireApiCombo" AutomationProperties.Name="Provider wire API" Header="Wire API" SelectionChanged="OnWireApiChanged"><x:String>responses</x:String><x:String>chat</x:String></ComboBox>
+                    <PasswordBox x:Name="ApiKeyBox" x:Uid="ProviderApiKey" AutomationProperties.AutomationId="ProviderApiKeyBox" AutomationProperties.Name="Provider API key" Header="API key" PasswordChanged="OnApiKeyChanged" PlaceholderText="Stored locally and never shown again" />
+                    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Uid="RefreshModels" AutomationProperties.AutomationId="RefreshProviderModelsButton" AutomationProperties.Name="Refresh provider model list" Click="OnRefresh" Content="Refresh model list" /><Button x:Uid="RemoveProvider" AutomationProperties.AutomationId="RemoveProviderButton" AutomationProperties.Name="Remove provider" Click="OnRemove" Content="Remove provider" /></StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </StackPanel>
+</UserControl>

@@ -12,6 +12,8 @@ from .models import AgentFarmConfig
 CONFIG_FILE = "agent-farm.config.json"
 LOCAL_CONFIG_FILE = "agent-farm.local.json"
 DEFAULT_SECRETS_ENV_FILE = ".agent-farm/secrets.env"
+CONFIG_SCHEMA_VERSION = 2
+CONFIG_SCHEMA_KEY = "_schema_version"
 
 DEFAULT_FORBIDDEN_PATHS = [
     ".env",
@@ -52,7 +54,9 @@ MODEL_PROVIDER_FIELDS = {
 }
 
 SANDBOX_MODES = {"read-only", "workspace-write", "danger-full-access"}
+NATIVE_SANDBOX_BACKENDS = {"auto", "windows", "docker"}
 APPROVAL_POLICIES = {"untrusted", "on-failure", "on-request", "never"}
+BUDGET_POLICIES = {"warn", "hard-stop"}
 AGENT_BACKENDS = {"native", "codex"}
 REASONING_MODES = {"enabled", "disabled"}
 REASONING_EFFORTS = {"none", "default", "minimal", "low", "medium", "high", "xhigh", "max"}
@@ -70,6 +74,7 @@ PROFILE_KEY_MAP = {
     "codex_profile_v2": "worker_codex_profile_v2",
     "secrets_env": "secrets_env",
     "timeout_seconds": "timeout_seconds",
+    "budget_usd": "worker_budget_usd",
     "sandbox": "sandbox",
     "approval_policy": "approval_policy",
     "ephemeral": "ephemeral",
@@ -77,10 +82,24 @@ PROFILE_KEY_MAP = {
     "codex_config_overrides": "codex_config_overrides",
 }
 
+LEGACY_ROOT_KEY_MAP = {
+    "model": "worker_model",
+    "provider": "worker_provider",
+    "reasoning_mode": "worker_reasoning_mode",
+    "reasoning_effort": "worker_reasoning_effort",
+    "oss": "worker_oss",
+    "local_provider": "worker_local_provider",
+}
+
 # Metadata is persisted with a route but is never copied onto the resolved
 # AgentFarmConfig used to launch a Worker. This keeps stable routing IDs such
 # as "cheap" separate from the human-facing name shown in the desktop app.
-WORKER_PROFILE_METADATA_FIELDS = {"display_name"}
+WORKER_PROFILE_METADATA_FIELDS = {
+    "display_name",
+    "capability_tier",
+    "fallback_profiles",
+    "escalation_profile",
+}
 WORKER_PROFILE_FIELDS = set(PROFILE_KEY_MAP) | WORKER_PROFILE_METADATA_FIELDS
 
 
@@ -96,11 +115,22 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     loaded = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(loaded, dict):
         raise ValueError(f"Config must be a JSON object: {path}")
-    return loaded
+    return _normalize_config_data(loaded)
 
 
 def _normalize_config_data(data: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(data)
+    version = normalized.pop(CONFIG_SCHEMA_KEY, 1)
+    if type(version) is not int or version < 1:
+        raise ValueError(f"{CONFIG_SCHEMA_KEY} must be a positive integer.")
+    if version > CONFIG_SCHEMA_VERSION:
+        raise ValueError(
+            f"Config schema {version} is newer than supported schema {CONFIG_SCHEMA_VERSION}."
+        )
+    if version == 1:
+        for legacy, current in LEGACY_ROOT_KEY_MAP.items():
+            if legacy in normalized and current not in normalized:
+                normalized[current] = normalized.pop(legacy)
     overrides = dict(normalized.get("codex_config_overrides", {}))
     for key in CODEX_OVERRIDE_KEYS:
         if key in normalized:
@@ -108,6 +138,10 @@ def _normalize_config_data(data: dict[str, Any]) -> dict[str, Any]:
     if overrides:
         normalized["codex_config_overrides"] = overrides
     return normalized
+
+
+def _config_document(config: AgentFarmConfig) -> dict[str, Any]:
+    return {CONFIG_SCHEMA_KEY: CONFIG_SCHEMA_VERSION, **config.to_json()}
 
 
 def _optional_string(value: Any, label: str, *, max_length: int = 2048) -> None:
@@ -122,6 +156,13 @@ def _optional_string(value: Any, label: str, *, max_length: int = 2048) -> None:
 def _positive_integer(value: Any, label: str, *, maximum: int) -> None:
     if type(value) is not int or not 1 <= value <= maximum:
         raise ValueError(f"{label} must be between 1 and {maximum}.")
+
+
+def _optional_positive_number(value: Any, label: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{label} must be a positive number or null.")
 
 
 def _string_list(value: Any, label: str) -> None:
@@ -161,6 +202,30 @@ def _validate_provider(provider_id: str, provider: Any) -> None:
             raise ValueError(f"model_providers.{provider_id}.{key} must be a boolean.")
 
 
+def _validate_price_overrides(overrides: Any) -> None:
+    if not isinstance(overrides, dict):
+        raise ValueError("model_price_overrides must be a JSON object.")
+    allowed = {"input", "cached_input", "cache_write_input", "output", "source"}
+    for route, raw in overrides.items():
+        if not isinstance(route, str) or "/" not in route or len(route) > 256:
+            raise ValueError("Model price override keys must use provider/model patterns.")
+        if not isinstance(raw, dict):
+            raise ValueError(f"Model price override must be an object: {route}")
+        unknown = sorted(set(raw) - allowed)
+        if unknown:
+            raise ValueError(f"Unsupported price fields for {route}: {', '.join(unknown)}")
+        for required in ("input", "output"):
+            if required not in raw:
+                raise ValueError(f"Model price override {route} requires {required}.")
+        for key in allowed - {"source"}:
+            if key not in raw:
+                continue
+            value = raw[key]
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"Model price override {route}.{key} must be non-negative.")
+        _optional_string(raw.get("source"), f"model_price_overrides.{route}.source")
+
+
 def _validate_worker_profile(name: str, profile: Any) -> None:
     if not IDENTIFIER_PATTERN.fullmatch(name):
         raise ValueError(f"Invalid worker profile name: {name}")
@@ -185,10 +250,23 @@ def _validate_worker_profile(name: str, profile: Any) -> None:
         f"worker_profiles.{name}.display_name",
         max_length=120,
     )
+    capability_tier = profile.get("capability_tier", "standard")
+    if capability_tier not in {"economy", "standard", "premium"}:
+        raise ValueError(
+            f"worker_profiles.{name}.capability_tier must be economy, standard, or premium."
+        )
+    fallback_profiles = profile.get("fallback_profiles")
+    if fallback_profiles is not None:
+        _string_list(fallback_profiles, f"worker_profiles.{name}.fallback_profiles")
+    _optional_string(
+        profile.get("escalation_profile"),
+        f"worker_profiles.{name}.escalation_profile",
+    )
     # A provider may be declared in the user's Codex config instead of Agent Farm.
     timeout = profile.get("timeout_seconds")
     if timeout is not None:
         _positive_integer(timeout, f"worker_profiles.{name}.timeout_seconds", maximum=86_400)
+    _optional_positive_number(profile.get("budget_usd"), f"worker_profiles.{name}.budget_usd")
     sandbox = profile.get("sandbox")
     if sandbox is not None and sandbox not in SANDBOX_MODES:
         raise ValueError(f"Invalid sandbox mode in worker profile '{name}'.")
@@ -266,13 +344,48 @@ def validate_config(config: AgentFarmConfig) -> AgentFarmConfig:
         "native_max_output_chars",
         maximum=2_000_000,
     )
+    if config.native_sandbox_backend not in NATIVE_SANDBOX_BACKENDS:
+        raise ValueError("native_sandbox_backend must be auto, windows, or docker.")
+    _positive_integer(
+        config.native_sandbox_memory_mb,
+        "native_sandbox_memory_mb",
+        maximum=131_072,
+    )
+    if not isinstance(config.native_sandbox_cpus, (int, float)) or not 0.1 <= float(
+        config.native_sandbox_cpus
+    ) <= 128:
+        raise ValueError("native_sandbox_cpus must be between 0.1 and 128.")
+    _positive_integer(config.native_sandbox_pids, "native_sandbox_pids", maximum=32_768)
+    _positive_integer(
+        config.provider_failure_threshold,
+        "provider_failure_threshold",
+        maximum=100,
+    )
+    _positive_integer(
+        config.provider_cooldown_seconds,
+        "provider_cooldown_seconds",
+        maximum=86_400,
+    )
+    if type(config.max_worker_escalations) is not int or not 0 <= config.max_worker_escalations <= 5:
+        raise ValueError("max_worker_escalations must be between 0 and 5.")
     _positive_integer(config.test_timeout_seconds, "test_timeout_seconds", maximum=86_400)
+    _positive_integer(config.artifact_retention_days, "artifact_retention_days", maximum=3_650)
+    _positive_integer(config.max_runtime_backups, "max_runtime_backups", maximum=100)
+    _positive_integer(config.max_diagnostic_bundles, "max_diagnostic_bundles", maximum=100)
     _positive_integer(config.max_diff_lines, "max_diff_lines", maximum=1_000_000)
     _positive_integer(config.max_changed_files, "max_changed_files", maximum=100_000)
     if config.sandbox not in SANDBOX_MODES:
         raise ValueError("sandbox must be read-only, workspace-write, or danger-full-access.")
     if config.approval_policy not in APPROVAL_POLICIES:
         raise ValueError("approval_policy must be untrusted, on-failure, on-request, or never.")
+    if config.budget_policy not in BUDGET_POLICIES:
+        raise ValueError("budget_policy must be warn or hard-stop.")
+    for key in ("worker_budget_usd", "farm_budget_usd", "monthly_budget_usd"):
+        _optional_positive_number(getattr(config, key), key)
+    if not isinstance(config.budget_warning_ratio, (int, float)) or isinstance(
+        config.budget_warning_ratio, bool
+    ) or not 0 < float(config.budget_warning_ratio) <= 1:
+        raise ValueError("budget_warning_ratio must be greater than 0 and at most 1.")
     for key in (
         "worker_oss",
         "auto_supervisor_review",
@@ -290,12 +403,25 @@ def validate_config(config: AgentFarmConfig) -> AgentFarmConfig:
         if not isinstance(provider_id, str):
             raise ValueError("Model provider ids must be strings.")
         _validate_provider(provider_id, provider)
+    _validate_price_overrides(config.model_price_overrides)
     if not isinstance(config.worker_profiles, dict):
         raise ValueError("worker_profiles must be a JSON object.")
     for name, profile in config.worker_profiles.items():
         if not isinstance(name, str):
             raise ValueError("Worker profile names must be strings.")
         _validate_worker_profile(name, profile)
+    for name, profile in config.worker_profiles.items():
+        if not isinstance(profile, dict):
+            continue
+        references = list(profile.get("fallback_profiles") or [])
+        if profile.get("escalation_profile"):
+            references.append(profile["escalation_profile"])
+        unknown_profiles = sorted(set(references) - set(config.worker_profiles))
+        if unknown_profiles:
+            raise ValueError(
+                f"Worker profile '{name}' references unknown fallback profiles: "
+                + ", ".join(unknown_profiles)
+            )
     if config.default_worker_profile is not None:
         if not isinstance(config.default_worker_profile, str):
             raise ValueError("default_worker_profile must be a string or null.")
@@ -377,7 +503,7 @@ def write_default_config(path: Path, *, force: bool = False) -> None:
     if path.exists() and not force:
         raise FileExistsError(f"Config already exists: {path}")
     path.write_text(
-        json.dumps(default_config_json(), indent=2, ensure_ascii=True) + "\n",
+        json.dumps(_config_document(default_config()), indent=2, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
 
@@ -393,7 +519,7 @@ def write_local_config(repo_root: Path, data: dict[str, Any]) -> Path:
     temporary_path = Path(temporary_name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(config.to_json(), stream, indent=2, ensure_ascii=True)
+            json.dump(_config_document(config), stream, indent=2, ensure_ascii=True)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
@@ -406,6 +532,7 @@ def write_local_config(repo_root: Path, data: dict[str, Any]) -> Path:
 
 def local_config_template() -> dict[str, Any]:
     return {
+        CONFIG_SCHEMA_KEY: CONFIG_SCHEMA_VERSION,
         "agent_backend": "native",
         "supervisor_model": "your-high-capability-model",
         "supervisor_provider": "my-provider",

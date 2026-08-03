@@ -97,7 +97,9 @@ def run_codex_worker(
     result = run_command(
         args,
         paths.repo_root,
-        timeout_seconds=timeout_seconds or config.timeout_seconds,
+        # No implicit deadline: long reasoning is expected. An explicit CLI
+        # override remains available to callers that intentionally want one.
+        timeout_seconds=timeout_seconds,
         input_text=prompt,
         env=env,
     )

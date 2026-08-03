@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <Analyzer Include="C:\Users\xffre\.codex\plugins\cache\microsoft-winui\winui\0.3.0\skills\winui-dev-workflow\analyzer\Microsoft.WindowsAppSDK.Analyzers.dll" />
+  </ItemGroup>
+  <Import Project="C:\Users\xffre\.codex\plugins\cache\microsoft-winui\winui\0.3.0\skills\winui-dev-workflow\analyzer\Microsoft.WindowsAppSDK.Analyzers.targets" />
+</Project>

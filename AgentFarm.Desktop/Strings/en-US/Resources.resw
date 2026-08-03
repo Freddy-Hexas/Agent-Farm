@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="NewTaskLabel.Text" xml:space="preserve"><value>New task</value></data>
+  <data name="WorkspaceLabel.Text" xml:space="preserve"><value>Workspace</value></data>
+  <data name="RunsLabel.Text" xml:space="preserve"><value>Runs</value></data>
+  <data name="ThreadsLabel.Text" xml:space="preserve"><value>THREADS</value></data>
+  <data name="ThreadSearch.PlaceholderText" xml:space="preserve"><value>Search threads</value></data>
+  <data name="SettingsLabel.Text" xml:space="preserve"><value>Settings</value></data>
+  <data name="NativeWorkspaceLabel.Text" xml:space="preserve"><value>Native WinUI workspace</value></data>
+  <data name="LoadingLabel.Text" xml:space="preserve"><value>Starting native Agent Farm…</value></data>
+  <data name="StartupError.Title" xml:space="preserve"><value>Agent Farm could not start</value></data>
+  <data name="ChooseRepository.Content" xml:space="preserve"><value>Choose repository</value></data>
+  <data name="SettingsTitle.Text" xml:space="preserve"><value>Settings</value></data>
+  <data name="SettingsSubtitle.Text" xml:space="preserve"><value>Native model routing and provider configuration. Changes apply to new runs.</value></data>
+  <data name="SaveSettings.Content" xml:space="preserve"><value>Save settings</value></data>
+  <data name="AgentRoutesLabel.Text" xml:space="preserve"><value>Agent routes</value></data>
+  <data name="ProvidersLabel.Text" xml:space="preserve"><value>Providers</value></data>
+  <data name="ConfigFileLabel.Text" xml:space="preserve"><value>CONFIG FILE</value></data>
+  <data name="AgentRoutesTitle.Text" xml:space="preserve"><value>Agent routes</value></data>
+  <data name="AgentRoutesDescription.Text" xml:space="preserve"><value>Use an expensive model for planning and economical models for parallel execution.</value></data>
+  <data name="SupervisorTitle.Text" xml:space="preserve"><value>Supervisor</value></data>
+  <data name="SupervisorDescription.Text" xml:space="preserve"><value>Read-only planner and final reviewer. Choose the strongest model here.</value></data>
+  <data name="SupervisorProvider.Header" xml:space="preserve"><value>Provider</value></data>
+  <data name="SupervisorModel.Header" xml:space="preserve"><value>Model</value></data>
+  <data name="SupervisorCustomModel.Header" xml:space="preserve"><value>Custom model ID</value></data>
+  <data name="SupervisorThinking.Header" xml:space="preserve"><value>Thinking</value></data>
+  <data name="SupervisorEffort.Header" xml:space="preserve"><value>Reasoning effort</value></data>
+  <data name="CostBudgetsTitle.Text" xml:space="preserve"><value>Cost budgets</value></data>
+  <data name="CostBudgetsDescription.Text" xml:space="preserve"><value>Zero means unlimited. Hard stop blocks the next model request after a limit is exhausted.</value></data>
+  <data name="WorkerRoutesTitle.Text" xml:space="preserve"><value>Worker routes</value></data>
+  <data name="WorkerRoutesDescription.Text" xml:space="preserve"><value>Each plan assigns one of these low-cost execution profiles.</value></data>
+  <data name="AddRoute.Content" xml:space="preserve"><value>Add route</value></data>
+  <data name="RemoveRoute.Content" xml:space="preserve"><value>Remove route</value></data>
+  <data name="ProvidersTitle.Text" xml:space="preserve"><value>Providers</value></data>
+  <data name="ProvidersDescription.Text" xml:space="preserve"><value>Start from an official template or add any OpenAI-compatible endpoint.</value></data>
+  <data name="ProviderTemplate.Header" xml:space="preserve"><value>Provider template</value></data>
+  <data name="AddProvider.Content" xml:space="preserve"><value>Add provider</value></data>
+  <data name="RefreshModels.Content" xml:space="preserve"><value>Refresh model list</value></data>
+  <data name="RemoveProvider.Content" xml:space="preserve"><value>Remove provider</value></data>
+  <data name="TaskPrompt.PlaceholderText" xml:space="preserve"><value>Describe a task for the farm</value></data>
+  <data name="LocalLabel.Text" xml:space="preserve"><value>Local</value></data>
+  <data name="TaskOptionsTitle.Text" xml:space="preserve"><value>Task options</value></data>
+  <data name="TaskOptionsDescription.Text" xml:space="preserve"><value>Control parallelism and the Git starting point for this run.</value></data>
+  <data name="Workers.Header" xml:space="preserve"><value>Workers</value></data>
+  <data name="BaseRef.Header" xml:space="preserve"><value>Base ref</value></data>
+  <data name="ExecutionTitle.Text" xml:space="preserve"><value>Execution</value></data>
+  <data name="SupervisorLabel.Text" xml:space="preserve"><value>SUPERVISOR</value></data>
+  <data name="PlannerLabel.Text" xml:space="preserve"><value>Planner</value></data>
+  <data name="PlanTab.Text" xml:space="preserve"><value>Plan</value></data>
+  <data name="LiveTab.Text" xml:space="preserve"><value>Live</value></data>
+  <data name="LiveEmpty.Text" xml:space="preserve"><value>Live model output will appear when planning or execution starts.</value></data>
+  <data name="CancelRun.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="RunsTitle.Text" xml:space="preserve"><value>Run history</value></data>
+  <data name="RunsDescription.Text" xml:space="preserve"><value>Completed and in-progress farms for this repository.</value></data>
+  <data name="ReviewTitle.Text" xml:space="preserve"><value>Candidate review</value></data>
+  <data name="CandidateA.Text" xml:space="preserve"><value>CANDIDATE A</value></data>
+  <data name="CandidateB.Text" xml:space="preserve"><value>CANDIDATE B</value></data>
+  <data name="CheckpointHistory.Header" xml:space="preserve"><value>Checkpoint history</value></data>
+  <data name="ApplyVerify.Content" xml:space="preserve"><value>Apply + verify</value></data>
+  <data name="MergeCandidate.Content" xml:space="preserve"><value>Merge</value></data>
+  <data name="RollbackCandidate.Content" xml:space="preserve"><value>Rollback</value></data>
+  <data name="EmptyTitle.Text" xml:space="preserve"><value>What should the farm accomplish?</value></data>
+  <data name="EmptyDescription.Text" xml:space="preserve"><value>A high-capability Supervisor creates the plan. Economical Workers execute isolated parts in parallel.</value></data>
+  <data name="NotificationsLabel.Text" xml:space="preserve"><value>Notifications</value></data>
+  <data name="NotificationEmpty.Text" xml:space="preserve"><value>No notifications yet.</value></data>
+  <data name="ReconnectRuntime.Content" xml:space="preserve"><value>Reconnect</value></data>
+  <data name="ReconnectRuntime.AutomationProperties.Name" xml:space="preserve"><value>Reconnect local runtime</value></data>
+  <data name="ProviderId.Header" xml:space="preserve"><value>Provider ID</value></data>
+  <data name="ProviderDisplayName.Header" xml:space="preserve"><value>Display name</value></data>
+  <data name="ProviderBaseUrl.Header" xml:space="preserve"><value>Base URL</value></data>
+  <data name="ProviderEnvironmentKey.Header" xml:space="preserve"><value>API key environment variable</value></data>
+  <data name="ProviderWireApi.Header" xml:space="preserve"><value>Wire API</value></data>
+  <data name="ProviderApiKey.Header" xml:space="preserve"><value>API key</value></data>
+  <data name="ProviderApiKey.PlaceholderText" xml:space="preserve"><value>Stored locally and never shown again</value></data>
+  <data name="RunsEmpty.Text" xml:space="preserve"><value>No runs yet. Start a task to create the first Farm.</value></data>
+  <data name="ExportDiagnostics.AutomationProperties.Name" xml:space="preserve"><value>Export diagnostic bundle</value></data>
+  <data name="ExportDiagnosticsLabel.Text" xml:space="preserve"><value>Export diagnostics</value></data>
+  <data name="DiagnosticBundleLabel.Text" xml:space="preserve"><value>LAST DIAGNOSTIC BUNDLE</value></data>
+  <data name="UpdatesLabel.Text" xml:space="preserve"><value>UPDATES</value></data>
+  <data name="ReleaseChannel.Header" xml:space="preserve"><value>Release channel</value></data>
+  <data name="ReleaseChannel.AutomationProperties.Name" xml:space="preserve"><value>Release channel</value></data>
+  <data name="CheckUpdates.Content" xml:space="preserve"><value>Check for updates</value></data>
+  <data name="CheckUpdates.AutomationProperties.Name" xml:space="preserve"><value>Check for updates</value></data>
+  <data name="InstallUpdate.Content" xml:space="preserve"><value>Download update</value></data>
+  <data name="InstallUpdate.AutomationProperties.Name" xml:space="preserve"><value>Download and install update</value></data>
+</root>

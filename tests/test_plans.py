@@ -78,6 +78,49 @@ class WorkerPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unique"):
             WorkerPlan.from_dict({"workers": [worker, worker]})
 
+    def test_validates_worker_dependency_dag(self):
+        plan = WorkerPlan.from_dict(
+            {
+                "workers": [
+                    {"id": "research", "role": "Research", "profile": "cheap", "goal": "Research."},
+                    {
+                        "id": "analysis",
+                        "role": "Analysis",
+                        "profile": "cheap",
+                        "goal": "Analyze.",
+                        "depends_on": ["research"],
+                    },
+                ]
+            }
+        )
+        self.assertEqual(plan.workers[1].depends_on, ["research"])
+        self.assertEqual(plan.to_json()["workers"][1]["depends_on"], ["research"])
+
+        with self.assertRaisesRegex(ValueError, "unknown dependencies"):
+            WorkerPlan.from_dict(
+                {
+                    "workers": [
+                        {
+                            "id": "analysis",
+                            "role": "Analysis",
+                            "profile": "cheap",
+                            "goal": "Analyze.",
+                            "depends_on": ["missing"],
+                        }
+                    ]
+                }
+            )
+
+        with self.assertRaisesRegex(ValueError, "contains a cycle"):
+            WorkerPlan.from_dict(
+                {
+                    "workers": [
+                        {"id": "a", "role": "A", "profile": "cheap", "goal": "A.", "depends_on": ["b"]},
+                        {"id": "b", "role": "B", "profile": "cheap", "goal": "B.", "depends_on": ["a"]},
+                    ]
+                }
+            )
+
     def test_approve_merge_requires_selected_worker(self):
         with self.assertRaisesRegex(ValueError, "approved_worker"):
             SupervisorDecision.from_dict(

@@ -1,0 +1,2 @@
+9091f97da02a7d69bcf6582cbd6854011d10c6d8dcb06dc571bcad9a26afe3f3  AgentFarm-Native-x64.msix
+73f593327437c7c6f7f40feffae747f8d67b46a44e070641865edbe853040a02  AgentFarm-stable.appinstaller

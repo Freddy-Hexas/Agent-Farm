@@ -1,0 +1,3 @@
+# Audited runtime dependency set used by the frozen Windows backend.
+# Update this pin together with pyproject.toml after reviewing upstream changes.
+pypdf==6.14.2

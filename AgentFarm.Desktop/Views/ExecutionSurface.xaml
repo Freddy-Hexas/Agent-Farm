@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="AgentFarm_Desktop.Views.ExecutionSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:AgentFarm_Desktop.Models"
+    mc:Ignorable="d">
+    <UserControl.Resources>
+        <DataTemplate x:Key="WorkerPlanTemplate" x:DataType="models:WorkerPlanItem">
+            <Border Margin="0,0,0,8" Padding="12" Background="{ThemeResource CardBackgroundBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}">
+                <StackPanel Spacing="5">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock FontSize="{StaticResource BodyStrongFontSize}" FontWeight="SemiBold" Text="{x:Bind Role}" />
+                        <TextBlock Grid.Column="1" FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind RouteLabel}" />
+                    </Grid>
+                    <TextBlock FontSize="{StaticResource BodyFontSize}" Foreground="{ThemeResource MutedTextBrush}" MaxLines="3" Text="{x:Bind Goal}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                    <TextBlock FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind DependencyLabel}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="LiveAgentTemplate" x:DataType="models:LiveAgentOutput">
+            <Border Margin="0,0,0,8" Padding="12" Background="{ThemeResource CardBackgroundBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}">
+                <StackPanel Spacing="7">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <ProgressRing Width="13" Height="13" IsActive="{x:Bind IsActive, Mode=OneWay}" />
+                        <TextBlock Grid.Column="1" FontSize="{StaticResource BodyFontSize}" FontWeight="SemiBold" Text="{x:Bind DisplayName}" />
+                        <TextBlock Grid.Column="2" FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind Status, Mode=OneWay}" />
+                        <Button Grid.Column="3" Width="24" Height="24" Padding="0" AutomationProperties.Name="Cancel this Worker" Background="Transparent" BorderThickness="0" Click="OnCancelWorker" IsEnabled="{x:Bind IsActive, Mode=OneWay}" Tag="{x:Bind Id}" ToolTipService.ToolTip="Cancel Worker">
+                            <FontIcon FontSize="{StaticResource CaptionFontSize}" Glyph="&#xE71A;" />
+                        </Button>
+                        <Button Grid.Column="4" Width="24" Height="24" Padding="0" AutomationProperties.Name="Retry this Worker" Background="Transparent" BorderThickness="0" Click="OnRetryWorker" IsEnabled="{x:Bind CanRetry, Mode=OneWay}" Tag="{x:Bind Id}" ToolTipService.ToolTip="Retry Worker">
+                            <FontIcon FontSize="{StaticResource CaptionFontSize}" Glyph="&#xE777;" />
+                        </Button>
+                    </Grid>
+                    <TextBlock FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind Route, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind Activity, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind DependencyLabel, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                    <ProgressBar AutomationProperties.Name="Worker progress" Minimum="0" Maximum="100" Value="{x:Bind Progress, Mode=OneWay}" />
+                            <Border MaxHeight="190" Padding="9,7" Background="{ThemeResource ControlFillColorDefaultBrush}" CornerRadius="{StaticResource DenseCornerRadius}">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" VerticalScrollMode="Auto">
+                            <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="{StaticResource SmallFontSize}" IsTextSelectionEnabled="True" LineHeight="16" Text="{x:Bind Output, Mode=OneWay}" TextWrapping="Wrap" />
+                        </ScrollViewer>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="ApprovalTemplate" x:DataType="models:ApprovalRequest">
+            <Border Margin="0,0,0,8" Padding="12" Background="{ThemeResource AccentSoftBrush}" BorderBrush="{ThemeResource SystemFillColorCautionBrush}" BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}">
+                <StackPanel Spacing="8">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock FontSize="{StaticResource BodyFontSize}" FontWeight="SemiBold" Text="{x:Bind Title}" />
+                        <TextBlock Grid.Column="1" FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind SourceLabel}" />
+                    </Grid>
+                    <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="{StaticResource SmallFontSize}" IsTextSelectionEnabled="True" MaxLines="4" Text="{x:Bind Description}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                    <Grid ColumnSpacing="6">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <Button AutomationProperties.Name="Allow this action once" Click="OnApprovalAllowOnce" Content="Allow once" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Tag="{x:Bind Id}" />
+                        <Button Grid.Column="1" AutomationProperties.Name="Allow this capability for the current run" Click="OnApprovalAllowSession" Content="Allow for run" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Tag="{x:Bind Id}" />
+                        <Button Grid.Column="2" AutomationProperties.Name="Deny this action" Click="OnApprovalDeny" Content="Deny" Tag="{x:Bind Id}" />
+                        <Button Grid.Column="3" AutomationProperties.Name="Cancel execution" Click="OnApprovalCancel" Content="Cancel" Tag="{x:Bind Id}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Border Padding="{StaticResource PanePadding}" Background="{ThemeResource PaneBackgroundBrush}">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <TextBlock x:Uid="ExecutionTitle" FontSize="{StaticResource SubtitleFontSize}" FontWeight="SemiBold" Text="Execution" />
+            <Border Grid.Row="1" Margin="0,14,0,10" Padding="12" Background="{ThemeResource CardBackgroundBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}">
+                <StackPanel Spacing="5">
+                    <Grid>
+                        <TextBlock FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" x:Uid="SupervisorLabel" Text="SUPERVISOR" />
+                        <Border HorizontalAlignment="Right" Padding="6,2" Background="{ThemeResource AccentSoftBrush}" CornerRadius="{StaticResource ControlCornerRadius}"><TextBlock x:Uid="PlannerLabel" FontSize="{StaticResource CaptionFontSize}" Text="Planner" /></Border>
+                    </Grid>
+                    <TextBlock x:Name="SupervisorRouteLabel" FontSize="{StaticResource BodyStrongFontSize}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="SupervisorModeLabel" FontSize="{StaticResource SmallFontSize}" Foreground="{ThemeResource MutedTextBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <Grid Grid.Row="2" Margin="0,0,0,8" ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <SelectorBar x:Name="SectionSelector" AutomationProperties.AutomationId="ExecutionSelector" SelectionChanged="OnSectionChanged">
+                    <SelectorBarItem x:Name="PlanItem" x:Uid="PlanTab" AutomationProperties.AutomationId="PlanSelectorItem" IsSelected="True" Text="Plan" />
+                    <SelectorBarItem x:Name="LiveItem" x:Uid="LiveTab" AutomationProperties.AutomationId="LiveSelectorItem" Text="Live" />
+                </SelectorBar>
+                <TextBlock x:Name="StateLabel" Grid.Column="1" VerticalAlignment="Center" FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind ViewModel.PlanState, Mode=OneWay}" />
+            </Grid>
+            <Grid Grid.Row="3">
+                <ListView x:Name="PlanList" AutomationProperties.AutomationId="WorkerPlanList" ItemTemplate="{StaticResource WorkerPlanTemplate}" SelectionMode="None" />
+                <Grid x:Name="LivePanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <ListView x:Name="ApprovalsList" AutomationProperties.AutomationId="ApprovalList" MaxHeight="310" ItemTemplate="{StaticResource ApprovalTemplate}" SelectionMode="None" />
+                    <ListView x:Name="AgentsList" Grid.Row="1" AutomationProperties.AutomationId="LiveOutputList" ItemTemplate="{StaticResource LiveAgentTemplate}" SelectionMode="None" />
+                    <TextBlock x:Name="LiveEmptyState" x:Uid="LiveEmpty" Grid.Row="1" AutomationProperties.AutomationId="LiveOutputEmptyState" Margin="12,20" HorizontalAlignment="Center" Foreground="{ThemeResource MutedTextBrush}" Text="Live model output will appear when planning or execution starts." TextAlignment="Center" TextWrapping="Wrap" />
+                </Grid>
+            </Grid>
+            <Grid Grid.Row="4" Margin="0,12,0,0" ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Button x:Name="StartButton" AutomationProperties.AutomationId="StartFarmButton" AutomationProperties.Name="Start Farm execution" Command="{x:Bind ViewModel.RequestStartCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Style="{StaticResource AccentButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon FontSize="{StaticResource BodyFontSize}" Glyph="&#xE768;" /><TextBlock x:Name="StartButtonLabel" Text="{x:Bind ViewModel.StartLabel, Mode=OneWay}" /></StackPanel>
+                </Button>
+                <Button x:Name="CancelButton" x:Uid="CancelRun" Grid.Column="1" AutomationProperties.AutomationId="CancelRunButton" AutomationProperties.Name="{x:Bind ViewModel.CancelAutomationName, Mode=OneWay}" Command="{x:Bind ViewModel.RequestCancelCommand}" Content="Cancel" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

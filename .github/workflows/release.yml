@@ -1,0 +1,103 @@
+name: Signed Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Four-part MSIX version, for example 0.6.0.0
+        required: true
+        type: string
+      channel:
+        description: Update channel
+        required: true
+        default: stable
+        type: choice
+        options: [stable, preview]
+      publish:
+        description: Publish the validated artifacts as a GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    environment: production-signing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip pytest -e ".[build]"
+      - name: Install Windows App Development CLI
+        shell: powershell
+        run: |
+          winget install --id Microsoft.WinAppCli --exact --source winget --silent --accept-package-agreements --accept-source-agreements
+          winapp --version
+      - name: Decode protected production certificate
+        shell: powershell
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.AGENT_FARM_SIGNING_PFX_BASE64 }}
+        run: |
+          if (-not $env:SIGNING_PFX_BASE64) { throw "AGENT_FARM_SIGNING_PFX_BASE64 is required." }
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\agent-farm-signing.pfx", [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+      - name: Test before packaging
+        run: python -m pytest -q
+      - name: Build, sign, timestamp, and generate AppInstaller
+        shell: powershell
+        env:
+          AGENT_FARM_SIGNING_PASSWORD: ${{ secrets.AGENT_FARM_SIGNING_PASSWORD }}
+          AGENT_FARM_PUBLISHER: ${{ secrets.AGENT_FARM_PUBLISHER }}
+        run: |
+          if (-not $env:AGENT_FARM_SIGNING_PASSWORD) { throw "AGENT_FARM_SIGNING_PASSWORD is required." }
+          if (-not $env:AGENT_FARM_PUBLISHER) { throw "AGENT_FARM_PUBLISHER is required." }
+          .\scripts\package_native_release.ps1 `
+            -Version "${{ inputs.version }}" `
+            -Channel "${{ inputs.channel }}" `
+            -PfxPath "$env:RUNNER_TEMP\agent-farm-signing.pfx" `
+            -Publisher $env:AGENT_FARM_PUBLISHER
+      - name: Upload signed release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentFarm-${{ inputs.channel }}-${{ inputs.version }}
+          if-no-files-found: error
+          path: dist/release/${{ inputs.channel }}/${{ inputs.version }}/**
+      - name: Install signed MSIX and verify registered version
+        shell: powershell
+        run: |
+          $package = Resolve-Path "dist\release\${{ inputs.channel }}\${{ inputs.version }}\AgentFarm-Native-x64.msix"
+          Add-AppxPackage -Path $package -ForceUpdateFromAnyVersion -ErrorAction Stop
+          $installed = Get-AppxPackage -Name AgentFarm.Desktop
+          if ($null -eq $installed -or $installed.Version.ToString() -ne "${{ inputs.version }}") {
+            throw "The signed MSIX did not install the requested version."
+          }
+      - name: Publish stable release
+        if: inputs.publish && inputs.channel == 'stable'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = "dist\release\stable\${{ inputs.version }}"
+          gh release create "v${{ inputs.version }}" "$root\*" --generate-notes --title "Agent Farm ${{ inputs.version }}"
+      - name: Publish preview channel
+        if: inputs.publish && inputs.channel == 'preview'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete preview --yes --cleanup-tag 2>$null
+          $root = "dist\release\preview\${{ inputs.version }}"
+          gh release create preview "$root\*" --prerelease --title "Agent Farm Preview ${{ inputs.version }}" --notes "Automated preview channel build ${{ inputs.version }}."

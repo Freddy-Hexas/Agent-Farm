@@ -89,6 +89,7 @@ class ThreadStore:
     ) -> dict[str, Any]:
         events = thread.setdefault("events", [])
         event = {
+            "schema_version": 1,
             "sequence": (events[-1]["sequence"] + 1) if events else 1,
             "type": event_type,
             "created_at": _utc_now(),
@@ -121,6 +122,59 @@ class ThreadStore:
         with self._lock:
             return copy.deepcopy(self._read_unlocked(thread_id))
 
+    def rename(self, thread_id: str, title: str) -> dict[str, Any]:
+        def operation(thread: dict[str, Any]) -> None:
+            thread["title"] = _clean_title(title)
+            self._event(thread, "thread/renamed", payload={"title": thread["title"]})
+
+        thread, _ = self._mutate(thread_id, operation)
+        return thread
+
+    def archive(self, thread_id: str, *, archived: bool = True) -> dict[str, Any]:
+        def operation(thread: dict[str, Any]) -> None:
+            thread["archived"] = bool(archived)
+            self._event(thread, "thread/archived" if archived else "thread/resumed")
+
+        thread, _ = self._mutate(thread_id, operation)
+        return thread
+
+    def delete(self, thread_id: str) -> None:
+        with self._lock:
+            thread = self._read_unlocked(thread_id)
+            if thread.get("status") in {"planning", "queued", "running", "cancelling"}:
+                raise ValueError("An active thread cannot be deleted. Cancel it first.")
+            self._path(thread_id).unlink()
+
+    def fork(self, thread_id: str, *, turn_id: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            source = self._read_unlocked(thread_id)
+            turns = list(source.get("turns") or [])
+            if turn_id is not None:
+                index = next(
+                    (index for index, turn in enumerate(turns) if turn.get("turn_id") == turn_id),
+                    None,
+                )
+                if index is None:
+                    raise FileNotFoundError(f"Unknown turn: {turn_id}")
+                turns = turns[: index + 1]
+            now = _utc_now()
+            forked = copy.deepcopy(source)
+            forked["thread_id"] = f"thread-{uuid.uuid4().hex[:16]}"
+            forked["title"] = _clean_title(f"{source.get('title', 'New task')} (fork)")
+            forked["status"] = "idle"
+            forked["archived"] = False
+            forked["created_at"] = now
+            forked["updated_at"] = now
+            forked["turns"] = turns
+            forked["events"] = []
+            self._event(
+                forked,
+                "thread/forked",
+                payload={"source_thread_id": thread_id, "source_turn_id": turn_id},
+            )
+            self._write_unlocked(forked)
+            return copy.deepcopy(forked)
+
     def list(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
         with self._lock:
             summaries: list[dict[str, Any]] = []
@@ -136,6 +190,7 @@ class ThreadStore:
                 turns = thread.get("turns") if isinstance(thread.get("turns"), list) else []
                 summaries.append(
                     {
+                        "schema_version": 1,
                         "thread_id": thread.get("thread_id"),
                         "title": thread.get("title", "New task"),
                         "status": thread.get("status", "idle"),
@@ -146,7 +201,13 @@ class ThreadStore:
                 )
             return sorted(summaries, key=lambda item: item.get("updated_at") or "", reverse=True)
 
-    def start_turn(self, thread_id: str, user_message: str) -> dict[str, Any]:
+    def start_turn(
+        self,
+        thread_id: str,
+        user_message: str,
+        *,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         message = user_message.strip()
         if not message:
             raise ValueError("A turn requires a non-empty user message.")
@@ -158,18 +219,23 @@ class ThreadStore:
             item_id = f"item-{uuid.uuid4().hex[:16]}"
             now = _utc_now()
             turn = {
+                "schema_version": 1,
                 "turn_id": turn_id,
                 "status": "planning",
                 "created_at": now,
                 "completed_at": None,
                 "items": [
                     {
+                        "schema_version": 1,
                         "item_id": item_id,
                         "type": "user_message",
                         "status": "completed",
                         "created_at": now,
                         "updated_at": now,
-                        "payload": {"text": message},
+                        "payload": {
+                            "text": message,
+                            "attachments": list(attachments or []),
+                        },
                     }
                 ],
             }
@@ -200,6 +266,7 @@ class ThreadStore:
             turn = self._find_turn(thread, turn_id)
             now = _utc_now()
             item = {
+                "schema_version": 1,
                 "item_id": f"item-{uuid.uuid4().hex[:16]}",
                 "type": item_type,
                 "status": status,
@@ -257,7 +324,7 @@ class ThreadStore:
         def operation(thread: dict[str, Any]) -> dict[str, Any]:
             turn = self._find_turn(thread, turn_id)
             turn["status"] = status
-            if status in {"completed", "failed", "cancelled"}:
+            if status in {"completed", "failed", "cancelled", "interrupted"}:
                 turn["completed_at"] = _utc_now()
             thread["status"] = status
             self._event(thread, f"turn/{status}", turn_id=turn_id)

@@ -61,6 +61,40 @@ class ThreadStoreTests(unittest.TestCase):
             )
             self.assertIsNone(store.find_by_farm("missing"))
 
+    def test_rename_archive_resume_fork_and_delete_lifecycle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ThreadStore(Path(tmp) / "threads")
+            source = store.create("Original")
+            turn = store.start_turn(source["thread_id"], "First turn")
+            store.update_turn(source["thread_id"], turn["turn_id"], "completed")
+
+            renamed = store.rename(source["thread_id"], "  Renamed   thread  ")
+            self.assertEqual(renamed["title"], "Renamed thread")
+            archived = store.archive(source["thread_id"])
+            self.assertTrue(archived["archived"])
+            self.assertEqual(store.list(), [])
+            self.assertEqual(len(store.list(include_archived=True)), 1)
+            resumed = store.archive(source["thread_id"], archived=False)
+            self.assertFalse(resumed["archived"])
+
+            forked = store.fork(source["thread_id"], turn_id=turn["turn_id"])
+            self.assertNotEqual(forked["thread_id"], source["thread_id"])
+            self.assertEqual(forked["status"], "idle")
+            self.assertEqual(len(forked["turns"]), 1)
+            self.assertEqual(forked["events"][0]["type"], "thread/forked")
+
+            store.delete(forked["thread_id"])
+            with self.assertRaises(FileNotFoundError):
+                store.read(forked["thread_id"])
+
+    def test_active_thread_cannot_be_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ThreadStore(Path(tmp) / "threads")
+            thread = store.create("Active")
+            store.start_turn(thread["thread_id"], "Work")
+            with self.assertRaisesRegex(ValueError, "active thread"):
+                store.delete(thread["thread_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

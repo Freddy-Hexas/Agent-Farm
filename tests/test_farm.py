@@ -106,6 +106,38 @@ class FarmTests(unittest.TestCase):
             decided = record_supervisor_decision(Path(result["farm_dir"]), decision_file)
             self.assertEqual(decided["status"], "SUPERVISOR_APPROVED")
 
+    def test_worker_dag_waits_for_dependencies_and_reports_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = self._repo_with_plan(root)
+            payload = json.loads(plan.read_text(encoding="utf-8"))
+            payload["workers"][1]["depends_on"] = ["impl-a"]
+            plan.write_text(json.dumps(payload), encoding="utf-8")
+            call_order = []
+            events = []
+
+            def fake_run_task(**kwargs):
+                worker_id = kwargs["task_file"].stem
+                call_order.append(worker_id)
+                return {
+                    "status": "REVIEW_PENDING",
+                    "run_dir": str(root / ".agent-farm" / "runs" / worker_id),
+                    "worktree": str(root / ".agent-farm" / "worktrees" / worker_id),
+                    "patch_file": str(root / f"{worker_id}.diff"),
+                    "changed_files": [],
+                    "tests": [],
+                    "machine_review": {"status": "passed", "findings": []},
+                }
+
+            with patch("agent_farm.farm.run_task", side_effect=fake_run_task):
+                result = run_farm(repo=root, plan_file=plan, event_callback=events.append)
+
+            self.assertEqual(call_order, ["impl-a", "impl-b"])
+            self.assertEqual(result["passed_workers"], ["impl-a", "impl-b"])
+            queued = [event for event in events if event["type"] == "worker.queued"]
+            self.assertEqual(queued[1]["depends_on"], ["impl-a"])
+            self.assertTrue(any(event.get("progress") == 100 for event in events))
+
     def test_native_farm_can_complete_automatic_supervisor_review(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -210,6 +242,95 @@ class FarmTests(unittest.TestCase):
             plan.write_text(json.dumps(raw), encoding="utf-8")
             with self.assertRaisesRegex(FarmError, "no allowed_paths"):
                 run_farm(repo=root, plan_file=plan)
+
+    def test_failed_machine_review_escalates_to_configured_fallback_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = self._repo_with_plan(root)
+            raw_plan = json.loads(plan.read_text(encoding="utf-8"))
+            raw_plan["workers"] = [raw_plan["workers"][0]]
+            plan.write_text(json.dumps(raw_plan), encoding="utf-8")
+            config_path = root / "agent-farm.config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["worker_profiles"]["cheap"]["escalation_profile"] = "mid"
+            config["max_worker_escalations"] = 1
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            profiles = []
+
+            def fake_run_task(**kwargs):
+                profiles.append(kwargs["profile"])
+                profile = kwargs["profile"]
+                run_dir = root / ".agent-farm" / "runs" / kwargs["task_id_override"]
+                return {
+                    "status": "REVIEW_PENDING",
+                    "run_dir": str(run_dir),
+                    "worktree": str(root / ".agent-farm" / "worktrees" / run_dir.name),
+                    "patch_file": str(run_dir / "patch.diff"),
+                    "changed_files": [{"status": "M", "path": "src/a.py"}],
+                    "tests": [],
+                    "machine_review": {
+                        "status": "failed" if profile == "cheap" else "passed",
+                        "findings": [],
+                    },
+                }
+
+            with patch("agent_farm.farm.run_task", side_effect=fake_run_task):
+                result = run_farm(repo=root, plan_file=plan)
+
+            self.assertEqual(profiles, ["cheap", "mid"])
+            self.assertEqual(result["status"], "SUPERVISOR_REVIEW_PENDING")
+            record = result["workers"][0]
+            self.assertEqual(record["profile"], "mid")
+            self.assertEqual(record["model"], "mid-model")
+            self.assertEqual(len(record["attempts"]), 2)
+            self.assertEqual(record["attempts"][0]["machine_review"], "failed")
+            self.assertEqual(record["attempts"][1]["machine_review"], "passed")
+
+    def test_each_worker_receives_only_explicitly_assigned_attachments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = self._repo_with_plan(root)
+            raw = json.loads(plan.read_text(encoding="utf-8"))
+            raw["workers"][0]["attachments"] = ["att-a"]
+            raw["workers"][1]["attachments"] = ["att-b"]
+            plan.write_text(json.dumps(raw), encoding="utf-8")
+            observed = {}
+
+            def fake_run_task(**kwargs):
+                worker_id = kwargs["task_file"].stem
+                observed[worker_id] = {
+                    "context": kwargs["attachment_context"],
+                    "images": kwargs["model_attachments"],
+                }
+                run_dir = root / ".agent-farm" / "runs" / worker_id
+                return {
+                    "status": "REVIEW_PENDING",
+                    "run_dir": str(run_dir),
+                    "worktree": str(root / ".agent-farm" / "worktrees" / worker_id),
+                    "patch_file": str(run_dir / "patch.diff"),
+                    "changed_files": [],
+                    "tests": [],
+                    "machine_review": {"status": "passed", "findings": []},
+                }
+
+            with patch("agent_farm.farm.run_task", side_effect=fake_run_task):
+                run_farm(
+                    repo=root,
+                    plan_file=plan,
+                    attachment_context="all attachments must not be broadcast",
+                    model_attachments=[{"name": "all.png", "data_url": "data:image/png;base64,ALL"}],
+                    attachment_contexts={"att-a": "context A", "att-b": "context B"},
+                    model_attachments_by_id={
+                        "att-a": {"name": "a.png", "data_url": "data:image/png;base64,A"},
+                        "att-b": {"name": "b.png", "data_url": "data:image/png;base64,B"},
+                    },
+                )
+
+            self.assertEqual(observed["impl-a"]["context"], "context A")
+            self.assertEqual(observed["impl-b"]["context"], "context B")
+            self.assertEqual(observed["impl-a"]["images"][0]["name"], "a.png")
+            self.assertEqual(observed["impl-b"]["images"][0]["name"], "b.png")
+            self.assertNotIn("all attachments", observed["impl-a"]["context"])
 
     def test_real_orchestration_uses_separate_worktrees_for_parallel_workers(self):
         with tempfile.TemporaryDirectory() as tmp:

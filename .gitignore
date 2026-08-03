@@ -13,4 +13,7 @@ __pycache__/
 build/
 dist/
 test-artifacts/
+artifacts/
 *.egg-info/
+**/bin/
+**/obj/

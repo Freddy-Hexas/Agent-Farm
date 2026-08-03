@@ -7,16 +7,16 @@ Agent Farm is a Windows desktop application for autonomous multi-agent work. A h
 **Worker**, reviews the evidence, and produces the final result. Workers can use substantially less
 expensive models than the Supervisor.
 
-[![Version](https://img.shields.io/badge/version-0.4.6-blue)](releases/v0.4.6)
-[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](releases/v0.4.6)
+[![Version](https://img.shields.io/badge/version-0.5.0.8-blue)](releases/v0.5.0.8)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](releases/v0.5.0.8)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 > [!IMPORTANT]
-> Agent Farm is an active preview. The signed MSIX is usable today, but the one-click installation
-> experience is still being optimized. The current preview uses a development signing certificate,
-> so first-time installation requires importing the included `.cer` certificate before opening the
-> MSIX. Production signing, smoother prerequisite handling, and a true one-click installer are on
-> the roadmap.
+> Agent Farm is an active preview. The repository package is self-contained and signed with a
+> development certificate, so first-time installation still requires trusting the included `.cer`.
+> The production release pipeline now builds a timestamped, CA-signed MSIX and AppInstaller upgrade
+> feed, but that production certificate and public one-click channel must be configured by the
+> project owner before general distribution.
 
 ## Why Agent Farm exists
 
@@ -53,11 +53,13 @@ provider.
 
 ### Native Windows desktop application
 
-- Native WinUI 3 shell with Windows App SDK.
+- Pure native WinUI 3/XAML workspace with Windows App SDK; the desktop UI does not host HTML or a
+  WebView.
 - Taskbar-safe startup maximization and native window controls.
 - Persistent project threads and task history.
 - Settings, Agents, Providers, Runs, and evidence views.
 - Local loopback backend owned by the desktop process.
+- API-only packaged backend; HTML, CSS, and JavaScript browser assets are not included in the MSIX.
 - Release builds include a frozen Python backend and do not require a system Python installation.
 - Debug builds start the Python backend directly from source for fast iteration.
 
@@ -108,9 +110,10 @@ control and `high` / `max` effort values rather than OpenAI's `xhigh` UI.
 ```text
 AgentFarm.Desktop (WinUI 3)
     |
-    +-- WebView2 workspace UI
-    +-- native title bar and window lifecycle
-    +-- starts/stops the local backend
+    +-- native XAML threads, timeline, composer, runs, and Settings
+    +-- native title bar, window lifecycle, dialogs, and accessibility tree
+    +-- typed JSON client
+    +-- starts/stops the local backend process
     |
     v
 Loopback product API
@@ -131,8 +134,10 @@ Native agent runtime
     +-- event logs, patches, tests, and machine review
 ```
 
-The frontend does not contain a mock agent. Buttons in the desktop workspace call the same backend
-used by the CLI, and Settings updates are applied to subsequent runs.
+The desktop frontend does not contain a mock agent and does not render the browser console. Native
+controls call the same loopback JSON API used by the CLI, and Settings updates are applied to
+subsequent runs. The optional browser console remains available for remote-free diagnostics, but it
+is not loaded by `AgentFarm.Desktop`.
 
 ## Installation on Windows
 
@@ -141,18 +146,22 @@ used by the CLI, and Settings updates are applied to subsequent runs.
 - Windows 10 version 1809 or newer; Windows 11 is recommended.
 - x64 processor for the current release package.
 - Git installed and available on `PATH`.
+- Docker Desktop with the required runtime image for network-denied execution of repository code
+  and tests in the default `workspace-write` sandbox. Without it, executable repository code fails
+  closed instead of falling back to the host.
 - At least one model provider API key, unless all selected routes use local runtimes.
-- Microsoft Windows App Runtime 2.3. Windows may install the dependency automatically; dependency
-  handling will be improved as part of the one-click installer work.
+- No separate Python or Windows App Runtime installation is required by the self-contained Release
+  package.
 
 ### Install the current preview
 
-1. Open the [v0.4.6 download directory](releases/v0.4.6).
+1. Open the [v0.5.0.8 download directory](releases/v0.5.0.8).
 2. Download:
-   - [`AgentFarm-Native-0.4.6.0-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.4.6/AgentFarm-Native-0.4.6.0-x64.msix)
-   - [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.4.6/AgentFarm-dev.cer)
+   - [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.8/AgentFarm-Native-x64.msix)
+   - [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.8/AgentFarm-dev.cer)
+   - [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.8/SHA256SUMS.txt) for integrity verification
 3. Import `AgentFarm-dev.cer` into the current user's **Trusted People** certificate store.
-4. Double-click `AgentFarm-Native-0.4.6.0-x64.msix` and select **Install**.
+4. Double-click `AgentFarm-Native-x64.msix` and select **Install**.
 5. Launch **Agent Farm** from the Start menu.
 
 You can import the certificate with PowerShell instead of the certificate wizard:
@@ -167,9 +176,8 @@ The certificate is a development certificate for preview distribution. Inspect t
 package before trusting them. The MSIX is signed with publisher `CN=Agent Farm`.
 
 > [!NOTE]
-> The current package is an upgradeable MSIX, but installation is not yet the final one-click
-> experience. We are actively optimizing certificate trust, runtime dependency installation,
-> package size, update delivery, and production code signing.
+> The checked-in package intentionally remains development-signed. Production releases use the
+> protected workflow in `.github/workflows/release.yml`; see [Releasing](docs/RELEASING.md).
 
 ## First run
 
@@ -241,8 +249,7 @@ The desktop Settings UI is recommended, but the same routes can be configured in
       "display_name": "DeepSeek Worker",
       "provider": "deepseek",
       "model": "deepseek-v4-flash",
-      "reasoning_mode": "enabled",
-      "timeout_seconds": 1200
+      "reasoning_mode": "enabled"
     }
   },
   "codex_config_overrides": {
@@ -307,17 +314,17 @@ python -m pip install -e ".[desktop,build]"
 ### Run the Python tests
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m pytest -q
 ```
 
-The `0.4.6` codebase passes 92 automated tests covering configuration, secrets, provider catalogs,
-model protocol translation, the native tool loop, worktree isolation, machine review, Supervisor
-planning, collaborative synthesis, desktop runtime behavior, HTTP endpoints, and UI contracts.
+The suite covers configuration and migrations, secrets, provider contracts, model streaming,
+worktree isolation, machine review, Supervisor planning, collaborative synthesis, durable runtime
+state, diagnostics, security boundaries, HTTP protocol behavior, MVVM state, and native UI contracts.
 
 ### Debug build
 
-Debug launches the Python backend from source, so backend and web UI changes do not require a new
-PyInstaller bundle:
+Debug launches the Python backend from source, so backend changes do not require a new PyInstaller
+bundle. XAML and C# changes still use the normal fast WinUI Debug rebuild:
 
 ```powershell
 .\scripts\build_native_windows.ps1 -Configuration Debug -Platform x64
@@ -340,36 +347,36 @@ The release output is written below:
 AgentFarm.Desktop\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64
 ```
 
-### Create a signed MSIX
+### Create a signed and timestamped MSIX
 
 ```powershell
-winapp cert generate `
-  --manifest .\AgentFarm.Desktop\Package.appxmanifest `
-  --output .\dist\signing\AgentFarm-dev.pfx `
-  --export-cer `
-  --if-exists overwrite
-
-winapp package `
-  .\AgentFarm.Desktop\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64 `
-  --cert .\dist\signing\AgentFarm-dev.pfx `
-  --output .\dist\AgentFarm-Native-0.4.6.0-x64.msix
+.\scripts\package_native_release.ps1 `
+  -Version 0.5.0.8 `
+  -Channel stable `
+  -PfxPath $env:AGENT_FARM_SIGNING_PFX `
+  -Publisher $env:AGENT_FARM_PUBLISHER
 ```
 
-Do not commit the PFX file. Production distribution should use a protected production certificate
-and timestamped signatures.
+The script rejects self-signed production certificates, verifies the signer and timestamp, runs a
+frozen-backend smoke test, creates an AppInstaller feed, and writes SHA256 checksums. Never commit a
+PFX file. Full procedure: [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Repository layout
 
 ```text
-AgentFarm.Desktop/       Native WinUI 3 desktop shell
+AgentFarm.Desktop/       Pure native WinUI 3/XAML desktop application
 agent_farm/              Python product backend and orchestration runtime
-agent_farm/web/          Desktop workspace web assets
+agent_farm/web/          Optional browser console (not used by the desktop app)
 docs/                    Product, architecture, and roadmap documents
 examples/                Safe configuration and plan examples
 packaging/               PyInstaller entry points and build specifications
 scripts/                 Windows build scripts
 tests/                   Automated unit, integration, and UI-contract tests
 ```
+
+Maintainer references: [Architecture](docs/ARCHITECTURE.md) ·
+[Protocol](docs/PROTOCOL.md) · [Security](docs/SECURITY.md) ·
+[Releasing](docs/RELEASING.md) · [Current limitations](docs/LIMITATIONS.md)
 
 Important backend modules:
 
@@ -388,10 +395,13 @@ Important backend modules:
 
 ## Current limitations
 
-- The Windows installer still requires manual trust of a development certificate.
+- The repository preview installer requires manual trust of a development certificate; the
+  production workflow requires a project-owner-provided CA certificate.
 - The current release is x64-only.
-- Production code signing and automatic update delivery are not yet implemented.
-- Windows App Runtime dependency handling is not yet fully self-contained.
+- Automatic updates require signed assets to be published through the Stable or Preview GitHub
+  Release channel.
+- The default secure command runner requires a running Docker Desktop and a pre-pulled language
+  image; registry access depends on the user's network configuration.
 - Provider compatibility can vary when a vendor exposes only a partial OpenAI-compatible API.
 - Web extraction cannot bypass authentication, paywalls, anti-bot pages, or inaccessible sources.
 - Agent Farm enforces engineering boundaries, but model output still requires appropriate human
@@ -399,9 +409,6 @@ Important backend modules:
 
 ## Roadmap
 
-- Production-signed one-click Windows installer.
-- Smaller and self-contained release packages.
-- Automatic update checks and in-app upgrades.
 - Better per-task token, latency, and cost accounting.
 - More deterministic retry and recovery controls.
 - Richer diff, artifact, and evidence review in the desktop UI.

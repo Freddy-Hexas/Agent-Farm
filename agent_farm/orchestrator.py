@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import time
+import json
+import shlex
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .codex_worker import run_codex_worker as run_legacy_codex_worker
 from .config import load_config, resolve_worker_profile
@@ -20,11 +22,16 @@ from .git_ops import (
 from .models import AgentFarmConfig, RunPaths, TaskStatus, TestResult
 from .native_agent import run_native_worker
 from .review import run_machine_review
+from .sandbox import SandboxError, SandboxManager
 from .specs import build_worker_prompt, make_task_id, read_task_spec
-from .util import ensure_inside, read_json, run_command, write_json
+from .util import ensure_inside, read_json, write_json
 
 
 class OrchestratorError(RuntimeError):
+    pass
+
+
+class OrchestratorCancelled(OrchestratorError):
     pass
 
 
@@ -32,7 +39,36 @@ def run_codex_worker(**kwargs):
     """Dispatch through the selected harness; name retained for API compatibility."""
     config = kwargs["config"]
     if config.agent_backend == "codex":
-        return run_legacy_codex_worker(**kwargs)
+        callback = kwargs.pop("event_callback", None)
+        kwargs.pop("approval_callback", None)
+        kwargs.pop("cancel_check", None)
+        kwargs.pop("model_attachments", None)
+        kwargs.pop("usage_context", None)
+        if callback is not None:
+            callback(
+                {
+                    "type": "agent.started",
+                    "provider": "openai",
+                    "model": kwargs.get("model") or config.worker_model,
+                    "backend": "codex",
+                }
+            )
+        result = run_legacy_codex_worker(**kwargs)
+        if callback is not None:
+            if result.stdout:
+                callback(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "agent_message", "text": result.stdout[-24_000:]},
+                    }
+                )
+            callback(
+                {
+                    "type": "agent.completed" if result.ok else "agent.failed",
+                    "error": result.stderr if not result.ok else None,
+                }
+            )
+        return result
     return run_native_worker(**kwargs)
 
 
@@ -109,31 +145,68 @@ def _write_state(
     write_json(paths.result_file, payload)
 
 
-def _run_tests(paths: RunPaths, commands: list[str], timeout_seconds: int) -> list[TestResult]:
+def _run_tests(
+    paths: RunPaths,
+    commands: list[str],
+    timeout_seconds: int,
+    config: AgentFarmConfig,
+    cancel_check: Callable[[], bool] | None = None,
+) -> list[TestResult]:
     test_dir = paths.run_dir / "tests"
     test_dir.mkdir(parents=True, exist_ok=True)
     results: list[TestResult] = []
+    sandbox = SandboxManager(
+        backend=config.native_sandbox_backend,
+        sandbox_mode=config.sandbox,
+        memory_mb=config.native_sandbox_memory_mb,
+        cpus=config.native_sandbox_cpus,
+        pids=config.native_sandbox_pids,
+        max_output_chars=config.native_max_output_chars,
+        forbidden_paths=config.forbidden_paths,
+    )
     for index, command in enumerate(commands, start=1):
         started = time.monotonic()
-        result = run_command(
-            command,
-            paths.worktree,
-            timeout_seconds=timeout_seconds,
-            shell=True,
-        )
+        argv = shlex.split(command, posix=True)
+        try:
+            result = sandbox.run(
+                argv,
+                worktree=paths.worktree,
+                cwd=paths.worktree,
+                timeout_seconds=timeout_seconds,
+                cancel_check=cancel_check,
+            )
+            returncode = result.returncode
+            stdout = result.stdout
+            stderr = result.stderr
+            timed_out = result.timed_out
+            manifest = result.manifest
+        except (SandboxError, OSError, ValueError) as exc:
+            returncode = 126
+            stdout = ""
+            stderr = str(exc)
+            timed_out = False
+            manifest = {
+                "schema_version": 1,
+                "backend": "unavailable",
+                "command": argv,
+                "denied": True,
+                "reason": str(exc),
+            }
         duration = time.monotonic() - started
         log_file = test_dir / f"{index:02d}.log"
         log_file.write_text(
-            f"$ {command}\n\n[stdout]\n{result.stdout}\n\n[stderr]\n{result.stderr}\n",
+            f"$ {command}\n\n[sandbox]\n{json.dumps(manifest, indent=2)}"
+            f"\n\n[stdout]\n{stdout}\n\n[stderr]\n{stderr}\n",
             encoding="utf-8",
         )
+        write_json(test_dir / f"{index:02d}.capabilities.json", manifest)
         results.append(
             TestResult(
                 command=command,
-                returncode=result.returncode,
+                returncode=returncode,
                 log_file=str(log_file),
                 duration_seconds=duration,
-                timed_out=result.timed_out,
+                timed_out=timed_out,
             )
         )
     return results
@@ -198,6 +271,12 @@ def run_task(
     codex_profile_v2: str | None = None,
     profile: str | None = None,
     task_id_override: str | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    approval_callback: Callable[[dict[str, Any]], str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    attachment_context: str = "",
+    model_attachments: list[dict[str, str]] | None = None,
+    usage_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     repo_root = find_repo_root(repo)
     base_config, selected_profile = resolve_worker_profile(
@@ -238,6 +317,8 @@ def run_task(
 
     task_spec = read_task_spec(task_file)
     prompt = build_worker_prompt(task_spec=task_spec, base_commit=base_commit, config=config)
+    if attachment_context:
+        prompt += f"\n\n## User Attachments\n\n{attachment_context.strip()}\n"
     paths.worker_prompt_file.write_text(prompt, encoding="utf-8")
     _write_state(
         paths,
@@ -272,7 +353,23 @@ def run_task(
         prompt=prompt,
         model=model,
         timeout_seconds=timeout_seconds,
+        event_callback=event_callback,
+        approval_callback=approval_callback,
+        cancel_check=cancel_check,
+        model_attachments=model_attachments,
+        usage_context=usage_context,
     )
+    if worker_result.returncode == 130:
+        _write_state(
+            paths,
+            status=TaskStatus.CANCELLED,
+            task_id=task_id,
+            base_ref=base_ref,
+            base_commit=base_commit,
+            config=config,
+            extra={"worker": {"cancelled": True}},
+        )
+        raise OrchestratorCancelled("Worker execution was cancelled.")
     _write_state(
         paths,
         status=TaskStatus.WORKER_FINISHED,
@@ -301,10 +398,17 @@ def run_task(
         base_commit=base_commit,
         config=config,
     )
-    test_results = _run_tests(paths, config.test_commands, config.test_timeout_seconds)
+    test_results = _run_tests(
+        paths,
+        config.test_commands,
+        config.test_timeout_seconds,
+        config,
+        cancel_check,
+    )
     changed_files = collect_changed_files(worktree)
     patch = collect_patch(worktree)
-    paths.patch_file.write_text(patch, encoding="utf-8")
+    # Git binary patches require LF-preserving payload lines on Windows.
+    paths.patch_file.write_text(patch, encoding="utf-8", newline="")
     worker_failure = None
     if worker_result.timed_out:
         worker_failure = "Worker agent timed out."
