@@ -21,7 +21,7 @@ class SecretsTests(unittest.TestCase):
                 {"TARGET": "new=value", "ADDED": "secret-token"},
             )
 
-            self.assertEqual(updated, path)
+            self.assertEqual(updated, path.resolve())
             self.assertEqual(
                 load_secrets_env(root, ".agent-farm/secrets.env"),
                 {"EXISTING": "value", "TARGET": "new=value", "ADDED": "secret-token"},

@@ -92,7 +92,7 @@ class ConfigTests(unittest.TestCase):
             path = write_local_config(root, data)
             loaded = load_config(root)
 
-            self.assertEqual(path, root / LOCAL_CONFIG_FILE)
+            self.assertEqual(path, (root / LOCAL_CONFIG_FILE).resolve())
             self.assertEqual(loaded.supervisor_model, "expensive-model")
             self.assertEqual(loaded.worker_profiles["cheap"]["model"], "cheap-model")
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))[CONFIG_SCHEMA_KEY], CONFIG_SCHEMA_VERSION)

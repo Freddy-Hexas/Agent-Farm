@@ -29,6 +29,14 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertIn("actions/upload-artifact@v7", workflow)
         self.assertIn("if: always()", workflow)
 
+    def test_optional_local_winui_analyzer_does_not_break_clean_build_hosts(self) -> None:
+        props = (ROOT / "AgentFarm.Desktop" / "Directory.Build.props").read_text(encoding="utf-8")
+
+        self.assertIn("$(USERPROFILE)", props)
+        self.assertIn("AgentFarmWinUIAnalyzerRoot", props)
+        self.assertEqual(props.count("Condition=\"Exists("), 2)
+        self.assertNotIn("C:\\Users\\xffre", props)
+
 
 if __name__ == "__main__":
     unittest.main()
