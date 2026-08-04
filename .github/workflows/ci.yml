@@ -95,42 +95,11 @@ jobs:
           -Arguments @("build", "AgentFarm.Desktop/AgentFarm.Desktop.csproj", "--configuration", "Debug", "-p:Platform=x64", "-warnaserror")
       - name: Run the native UI batch
         shell: powershell
-        run: |
-          $env:AGENT_FARM_REPO = $env:GITHUB_WORKSPACE
-          $env:AGENT_FARM_SOURCE_ROOT = $env:GITHUB_WORKSPACE
-          $env:AGENT_FARM_PYTHON = (Get-Command python).Source
-          $output = Resolve-Path "AgentFarm.Desktop\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64"
-          $launch = winapp run $output --detach --json | Out-String | ConvertFrom-Json
-          $appPid = [int]$launch.ProcessId
-          try {
-            $ready = winapp ui wait-for RepositoryButton -a $appPid -t 60000 2>&1
-            $ready | Write-Host
-            if ($LASTEXITCODE -ne 0) {
-              $artifactRoot = "test-artifacts\native-ui-tests"
-              New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
-              $diagnostics = @($ready)
-              $diagnostics += winapp ui list-windows -a $appPid 2>&1
-              $diagnostics += Get-Process -Id $appPid -ErrorAction SilentlyContinue | Format-List Id,Name,HasExited,Path | Out-String
-              foreach ($log in @(
-                ".agent-farm\logs\runtime.log",
-                "$env:LOCALAPPDATA\Agent Farm\Logs\desktop-events.jsonl"
-              )) {
-                if (Test-Path -LiteralPath $log) {
-                  Copy-Item -LiteralPath $log -Destination $artifactRoot -Force
-                  $diagnostics += "--- $log ---"
-                  $diagnostics += Get-Content -LiteralPath $log -Tail 80
-                }
-              }
-              $detail = (($diagnostics | Select-Object -Last 160) -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-              Write-Output "::error title=Native UI startup::$detail"
-              exit 1
-            }
-            .\scripts\test_native_ui.ps1 -AppPid $appPid
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          finally {
-            try { (Get-Process -Id $appPid -ErrorAction SilentlyContinue).CloseMainWindow() | Out-Null } catch {}
-          }
+        run: >-
+          .\scripts\Invoke-CiCommand.ps1
+          -Title "Native UI batch"
+          -Executable powershell
+          -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\scripts\test_native_ui_ci.ps1")
       - name: Upload native UI evidence
         if: always()
         uses: actions/upload-artifact@v7
