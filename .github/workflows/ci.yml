@@ -92,7 +92,7 @@ jobs:
           .\scripts\Invoke-CiCommand.ps1
           -Title "Native UI WinUI build"
           -Executable dotnet
-          -Arguments @("build", "AgentFarm.Desktop/AgentFarm.Desktop.csproj", "--configuration", "Debug", "-p:Platform=x64", "-warnaserror")
+          -Arguments @("build", "AgentFarm.Desktop/AgentFarm.Desktop.csproj", "--configuration", "Debug", "-p:Platform=x64", "-p:WindowsAppSDKSelfContained=true", "-p:SelfContained=true", "-warnaserror")
       - name: Run the native UI batch
         shell: powershell
         run: >-

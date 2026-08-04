@@ -17,6 +17,8 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertIn("AgentFarm.Desktop/AgentFarm.Desktop.csproj", workflow)
         self.assertIn("-warnaserror", workflow)
         self.assertIn("microsoft/setup-WinAppCli@v0.1", workflow)
+        self.assertIn("-p:WindowsAppSDKSelfContained=true", workflow)
+        self.assertIn("-p:SelfContained=true", workflow)
         self.assertIn("scripts\\Invoke-CiCommand.ps1", workflow)
         self.assertIn("scripts\\test_native_ui_ci.ps1", workflow)
         self.assertIn('python -m pip install --upgrade pip -e ".[test]"', workflow)
