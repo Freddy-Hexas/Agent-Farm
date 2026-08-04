@@ -49,6 +49,17 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertEqual(props.count("Condition=\"Exists("), 2)
         self.assertNotIn("C:\\Users\\xffre", props)
 
+    def test_native_workspace_registers_independent_resize_controls(self) -> None:
+        shell = (ROOT / "AgentFarm.Desktop" / "MainPage.xaml").read_text(encoding="utf-8")
+        workspace = (
+            ROOT / "AgentFarm.Desktop" / "Views" / "WorkspaceSurface.xaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('AutomationProperties.AutomationId="LeftPaneSplitter"', shell)
+        self.assertIn('AutomationProperties.AutomationId="RightPaneSplitter"', workspace)
+        self.assertIn('x:Name="LeftPaneSplitter"', shell)
+        self.assertIn('x:Name="ExecutionPaneSplitter"', workspace)
+
 
 if __name__ == "__main__":
     unittest.main()

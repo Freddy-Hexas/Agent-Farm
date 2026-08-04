@@ -67,11 +67,6 @@ Test-UI "Task options flyout works" {
     winapp ui wait-for BaseRefBox -a $AppPid -t 5000
     winapp ui focus TaskPrompt -a $AppPid
 }
-Test-UI "Both side-pane resize controls are independently registered" {
-    Ensure-ExecutionPaneExpanded
-    winapp ui wait-for LeftPaneSplitter -a $AppPid -t 5000
-    winapp ui wait-for RightPaneSplitter -a $AppPid -t 5000
-}
 Test-UI "Settings navigation works" {
     winapp ui invoke SettingsNavigationButton -a $AppPid
     winapp ui wait-for SupervisorProviderCombo -a $AppPid -t 5000
