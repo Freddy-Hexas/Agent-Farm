@@ -1,170 +1,158 @@
-# Agent Farm
+<div align="center">
+  <img src="branding/agent-farm-logo/logo-preview.png" alt="Agent Farm logo" width="132">
+  <h1>Agent Farm</h1>
+  <p><strong>Use your best model for judgment. Use economical models for the work.</strong></p>
+  <p>A native Windows workspace for planning, running, and reviewing multi-agent jobs across models and providers.</p>
 
-**One expensive brain. Many economical hands.**
+  [![Version](https://img.shields.io/badge/version-0.5.0.9-blue)](releases/v0.5.0.9)
+  [![Windows x64](https://img.shields.io/badge/Windows-x64-0078d4?logo=windows11)](releases/v0.5.0.9)
+  [![Continuous integration](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/ci.yml/badge.svg)](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/ci.yml)
+  [![Security](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/security.yml/badge.svg)](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/security.yml)
+  [![License](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
+</div>
 
-Agent Farm is a Windows desktop application for autonomous multi-agent work. A high-capability
-**Supervisor** understands the request, creates a bounded plan, routes each task to an independent
-**Worker**, reviews the evidence, and produces the final result. Workers can use substantially less
-expensive models than the Supervisor.
+---
 
-[![Version](https://img.shields.io/badge/version-0.5.0.9-blue)](releases/v0.5.0.9)
-[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](releases/v0.5.0.9)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+## The practical problem
+
+Suppose you ask an agent to investigate a large repository, compare several implementation options,
+edit six files, run tests, and explain the result.
+
+Using one premium model for the entire job works, but it spends premium tokens on everything:
+listing files, searching symbols, reading repetitive code, running commands, and drafting intermediate
+notes. Giving the whole job to a cheap model saves money, but increases the chance of a weak plan,
+missed constraints, or an unconvincing final answer.
+
+Agent Farm separates those responsibilities:
+
+- A high-capability **Supervisor** understands the goal, splits the work, assigns models, checks
+  evidence, and owns the final decision.
+- Economical **Workers** research, inspect, edit, test, and produce bounded artifacts in parallel.
+- Deterministic gates verify paths, diffs, tests, budgets, and permissions before results are accepted.
+
+```text
+Your request
+    |
+    v
+Premium Supervisor  -- plan, route, judge, synthesize
+    |
+    +---- Economy Worker A  -- inspect or research
+    +---- Economy Worker B  -- implement or analyze
+    +---- Local Worker C    -- test or review
+              |
+              v
+       isolated worktrees
+       streaming activity
+       patches + tests + evidence
+              |
+              v
+Premium Supervisor  -- final report, decision, or reviewed change set
+```
+
+The expensive model spends its time where capability matters. The cheaper models do the scalable
+work.
+
+## What this looks like in real work
+
+### Research without one agent wandering the web
+
+> Investigate the latest memory-chip news. Have one Worker collect supply and pricing developments,
+> another analyze listed companies, and a third audit sources. Produce one cited report.
+
+The Supervisor creates a finite plan. Research Workers browse within explicit tool budgets, stream
+their findings, and save artifacts. The Supervisor then compares the evidence and writes one coherent
+deliverable instead of pasting three unrelated answers together.
+
+### Repository changes without agents colliding
+
+> Upgrade the authentication module. Keep CI untouched. Let one Worker map the current behavior,
+> one implement the change, and one focus on regression tests.
+
+Each Worker receives its own Git worktree and path allowlist. Agent Farm collects the changed files,
+patch, command logs, and test results before the Supervisor reviews anything. Workers never silently
+edit the main workspace together.
+
+### Mix providers instead of committing to one model stack
+
+Use a premium hosted model for the Supervisor, an economical hosted model for routine Workers, and a
+local Ollama or LM Studio model for private or repetitive tasks. Every route is explicit. A Worker does
+not silently inherit the Supervisor's provider or model.
+
+## Why Agent Farm is different
+
+| Everyday problem | Agent Farm's answer |
+| --- | --- |
+| Premium models are used for low-value mechanical steps | Separate Supervisor and Worker routes |
+| Cheap models struggle with open-ended planning | Keep intent, decomposition, and final review with the Supervisor |
+| Parallel agents overwrite one another | Give every Worker an isolated Git worktree |
+| A black box says “done” with no proof | Stream model output, tools, files, tests, usage, and failures |
+| Provider settings do not match the selected model | Load provider model catalogs and model-aware reasoning controls |
+| Long jobs disappear when the window closes | Persist jobs and events in a long-lived local daemon |
+| Agent changes are difficult to trust | Enforce allowed paths, approvals, machine review, checkpoints, and rollback |
+
+Agent Farm includes its own native agent runtime. It does not require Codex to run a farm; a legacy
+Codex compatibility backend remains optional.
+
+## Product experience
+
+Agent Farm is a real native Windows application built with WinUI 3 and XAML. The desktop does not
+embed its interface in a WebView.
+
+- Native project navigation, persistent threads, task composer, Settings, Runs, and review surfaces.
+- Resizable navigation and execution panes with taskbar-safe maximized startup.
+- File attachments and repository-local artifact handling.
+- Incremental Supervisor and Worker output instead of waiting for one final response.
+- Live Worker status, tool activity, approvals, token usage, errors, and cancellation.
+- Durable jobs and reconnectable event history when the app or daemon restarts.
+- Provider and model selection directly inside Supervisor and Worker settings.
+- Reviewable patches, changed files, tests, deliverables, diagnostics, and rollback checkpoints.
+
+## Supported model routes
+
+Agent Farm ships provider templates, credential fields, endpoints, catalog discovery, and compatible
+reasoning controls for:
+
+| Category | Providers and runtimes |
+| --- | --- |
+| Direct providers | OpenAI, Anthropic, Google Gemini, xAI, Mistral AI |
+| China-region providers | DeepSeek, Kimi, Alibaba Cloud Qwen, Zhipu GLM, Volcengine Ark / Doubao |
+| Model gateways | OpenRouter, SiliconFlow, GroqCloud, Together AI, Fireworks AI |
+| Local runtimes | Ollama, LM Studio |
+| Custom endpoints | OpenAI-compatible Responses or Chat Completions APIs |
+
+Official templates attempt to load the models available to the configured account and present them
+as a list. Custom compatible endpoints keep a manual Model ID field for private gateways and proxies.
+Reasoning controls are derived from the provider and model instead of showing the same OpenAI-specific
+options everywhere.
+
+## Install the current Windows preview
 
 > [!IMPORTANT]
-> Agent Farm is an active preview. The repository package is self-contained and signed with a
-> development certificate, so first-time installation still requires trusting the included `.cer`.
-> The production release pipeline now builds a timestamped, CA-signed MSIX and AppInstaller upgrade
-> feed, but that production certificate and public one-click channel must be configured by the
-> project owner before general distribution.
-
-## Why Agent Farm exists
-
-Most agent products use one model for every step. That is convenient, but expensive: repository
-exploration, web research, mechanical edits, test execution, and final judgment do not all require
-the same model capability.
-
-Agent Farm makes the cost boundary explicit:
-
-```text
-User request
-    |
-    v
-High-capability Supervisor
-    |  understand, decompose, route, review, synthesize
-    |
-    +----> Economical Worker A ----> isolated worktree ----> artifact + evidence
-    +----> Economical Worker B ----> isolated worktree ----> artifact + evidence
-    +----> Local Worker C ---------> isolated worktree ----> artifact + evidence
-    |
-    v
-Machine review gates
-    |
-    v
-Supervisor decision or final synthesis
-```
-
-The Supervisor may use a premium model, while Workers independently use DeepSeek, Qwen, Kimi,
-OpenRouter models, local Ollama models, or any OpenAI-compatible endpoint. Model routes are visible
-and editable; Agent Farm never silently replaces the selected Worker provider with the Supervisor
-provider.
-
-## What is implemented
-
-### Native Windows desktop application
-
-- Pure native WinUI 3/XAML workspace with Windows App SDK; the desktop UI does not host HTML or a
-  WebView.
-- Taskbar-safe startup maximization and native window controls.
-- Persistent project threads and task history.
-- Settings, Agents, Providers, Runs, and evidence views.
-- Local loopback backend owned by the desktop process.
-- API-only packaged backend; HTML, CSS, and JavaScript browser assets are not included in the MSIX.
-- Release builds include a frozen Python backend and do not require a system Python installation.
-- Debug builds start the Python backend directly from source for fast iteration.
-
-### Real multi-agent orchestration
-
-- A high-capability Supervisor creates validated Worker Plans.
-- Every Worker selects an explicit named model profile.
-- Workers run concurrently up to a configured limit.
-- Every Worker receives an independent Git worktree.
-- Workers can inspect files, search code, edit bounded paths, and run verification commands.
-- Research Workers can use opt-in public web search and bounded page/PDF extraction.
-- Collaborative tasks can combine every passing Worker artifact into one final deliverable.
-- Typed JSONL events preserve messages, tool calls, results, usage, and failures.
-
-### Review and safety boundaries
-
-- `allowed_paths` restrict where a Worker may write.
-- `forbidden_paths` protect secrets, Git metadata, CI workflows, and other sensitive paths.
-- Commands are executed through a bounded no-shell runner.
-- Worker changes are collected as patches before any Supervisor decision.
-- Machine review checks path scope, changed-file count, diff size, lockfiles, test deletion, and
-  configured verification commands.
-- Provider credentials are stored locally and never returned by the Settings API.
-- Network tools are disabled unless network access is explicitly enabled.
-- Workers cannot push, deploy, change permissions, or silently modify the Supervisor workspace.
-
-### Provider-aware model routing
-
-Agent Farm includes templates for the following providers and runtimes:
-
-| Category | Providers |
-| --- | --- |
-| Direct providers | OpenAI, Anthropic Claude, Google Gemini, xAI, Mistral AI |
-| China-region providers | DeepSeek, Kimi, Alibaba Cloud Qwen, Zhipu GLM, Volcengine Ark / Doubao |
-| Model gateways | SiliconFlow, OpenRouter, GroqCloud, Together AI, Fireworks AI |
-| Local runtimes | Ollama, LM Studio |
-| Custom | Any OpenAI-compatible Chat Completions or Responses endpoint |
-
-Official templates load the compatible model catalog available to the configured API key and show
-the models as a dropdown. Custom OpenAI-compatible routes retain a manual Model ID field.
-
-Reasoning controls are provider-aware. Agent Farm does not show OpenAI-only effort values for a
-provider that does not support them. For example, the DeepSeek route uses its supported thinking
-control and `high` / `max` effort values rather than OpenAI's `xhigh` UI.
-
-## Architecture
-
-```text
-AgentFarm.Desktop (WinUI 3)
-    |
-    +-- native XAML threads, timeline, composer, runs, and Settings
-    +-- native title bar, window lifecycle, dialogs, and accessibility tree
-    +-- typed JSON client
-    +-- starts/stops the local backend process
-    |
-    v
-Loopback product API
-    |
-    +-- thread store
-    +-- settings and secret store
-    +-- provider catalog discovery
-    +-- Supervisor planning and review
-    +-- farm scheduler
-    |
-    v
-Native agent runtime
-    |
-    +-- Responses API client
-    +-- Chat Completions client
-    +-- repository and web tools
-    +-- per-Worker Git worktrees
-    +-- event logs, patches, tests, and machine review
-```
-
-The desktop frontend does not contain a mock agent and does not render the browser console. Native
-controls call the same loopback JSON API used by the CLI, and Settings updates are applied to
-subsequent runs. The optional browser console remains available for remote-free diagnostics, but it
-is not loaded by `AgentFarm.Desktop`.
-
-## Installation on Windows
+> Version 0.5.0.9 is a development-signed preview. The application itself is self-contained, but the
+> first installation requires trusting the included development certificate. A public one-click,
+> CA-signed installer channel is still being prepared.
 
 ### Requirements
 
 - Windows 10 version 1809 or newer; Windows 11 is recommended.
-- x64 processor for the current release package.
-- Git installed and available on `PATH`.
-- Docker Desktop with the required runtime image for network-denied execution of repository code
-  and tests in the default `workspace-write` sandbox. Without it, executable repository code fails
-  closed instead of falling back to the host.
-- At least one model provider API key, unless all selected routes use local runtimes.
-- No separate Python or Windows App Runtime installation is required by the self-contained Release
-  package.
+- An x64 processor.
+- Git available on `PATH`.
+- At least one provider API key, unless every selected route is local.
+- Docker Desktop and a suitable language image when securely executing repository code or tests in
+  the default `workspace-write` sandbox. Agent Farm fails closed if that sandbox is unavailable.
 
-### Install the current preview
+The packaged Release build includes the .NET, Windows App SDK, and frozen Python runtime. Users do not
+need to install Python separately.
 
-1. Open the [v0.5.0.9 download directory](releases/v0.5.0.9).
-2. Download:
-   - [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-Native-x64.msix)
-   - [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-dev.cer)
-   - [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/SHA256SUMS.txt) for integrity verification
-3. Import `AgentFarm-dev.cer` into the current user's **Trusted People** certificate store.
-4. Double-click `AgentFarm-Native-x64.msix` and select **Install**.
-5. Launch **Agent Farm** from the Start menu.
+### Download and install
 
-You can import the certificate with PowerShell instead of the certificate wizard:
+Download these files from [`releases/v0.5.0.9`](releases/v0.5.0.9):
+
+- [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-Native-x64.msix)
+- [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-dev.cer)
+- [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/SHA256SUMS.txt)
+
+Import the certificate for the current user:
 
 ```powershell
 Import-Certificate `
@@ -172,267 +160,258 @@ Import-Certificate `
   -CertStoreLocation Cert:\CurrentUser\TrustedPeople
 ```
 
-The certificate is a development certificate for preview distribution. Inspect the certificate and
-package before trusting them. The MSIX is signed with publisher `CN=Agent Farm`.
+Then double-click `AgentFarm-Native-x64.msix`, select **Install**, and launch **Agent Farm** from the
+Start menu. The preview package is signed with publisher `CN=Agent Farm`; inspect the certificate and
+checksum before trusting it.
 
-> [!NOTE]
-> The checked-in package intentionally remains development-signed. Production releases use the
-> protected workflow in `.github/workflows/release.yml`; see [Releasing](docs/RELEASING.md).
+## Your first farm in five minutes
 
-## First run
+1. Open Agent Farm and choose the Git repository you want to work with.
+2. Open **Settings > Providers** and add a provider template, endpoint, and API key.
+3. Open **Settings > Agents** and select a high-capability Supervisor provider and model.
+4. Create at least one Worker profile with an economical or local model.
+5. Return to the workspace and describe the outcome, constraints, and desired deliverable.
+6. Review the proposed Worker plan, then watch each model's output and tool activity stream live.
+7. Inspect the final files, tests, evidence, and Supervisor result before applying changes.
 
-1. Open Agent Farm and select a Git repository when prompted.
-2. Open **Settings → Providers**.
-3. Add a provider template and enter its API key. API keys are write-only in the UI.
-4. Open **Settings → Agents**.
-5. Select the premium Supervisor provider and model.
-6. Add or edit one or more Worker routes, then select their provider and model from the catalog.
-7. Return to the workspace, describe the desired outcome, and start the task.
-8. Follow the plan, Worker activity, evidence, and final deliverable from the same thread.
-
-A typical cost-conscious configuration is:
+A useful first prompt is concrete about roles and boundaries:
 
 ```text
-Supervisor: premium reasoning model
-Worker A:   DeepSeek V4 Flash
-Worker B:   another economical hosted model
-Worker C:   optional local Ollama or LM Studio model
+Review this repository's startup path.
+
+Use two Workers:
+1. Map initialization, configuration, and failure handling without editing files.
+2. Identify the three highest-impact reliability improvements and add focused tests.
+
+Do not modify CI or release packaging. Summarize findings and changed files in one report.
 ```
 
-## How a task runs
+## How a farm runs
 
-1. **Plan** — the Supervisor inspects the request and creates a structured Worker Plan.
-2. **Validate** — Agent Farm rejects duplicate Worker IDs, unknown profiles, unsafe paths, or an
-   invalid deliverable location.
-3. **Isolate** — one Git worktree is created for each Worker from the same base commit.
-4. **Execute** — Workers use their assigned providers and models to perform bounded work.
-5. **Collect** — Agent Farm records the patch, changed files, tests, final report, and typed events.
-6. **Review** — deterministic machine rules reject unsafe or out-of-scope changes.
-7. **Decide or synthesize** — the Supervisor reviews passing evidence and either selects a result or
-   combines all passing Worker artifacts into a final deliverable.
+1. **Plan** - the Supervisor turns the request into a validated Worker Plan.
+2. **Route** - each Worker resolves to a named provider, model, capability tier, budget, and reasoning
+   mode.
+3. **Isolate** - Agent Farm creates one worktree per Worker from the same base commit.
+4. **Execute** - Workers inspect, research, edit, or test within their declared tools and paths.
+5. **Stream** - model deltas, tool calls, approvals, usage, and failures appear as ordered events.
+6. **Collect** - each Worker returns files, a patch, test logs, and structured evidence.
+7. **Review** - machine rules reject unsafe or out-of-scope results.
+8. **Synthesize** - the Supervisor compares passing evidence and produces the final deliverable or
+   change decision.
 
-Web research is deliberately finite. Research Workers receive a hard tool-call budget and a turn
-deadline, after which web tools are removed and the Worker is instructed to write and verify the
-requested artifact. This prevents inexpensive models from browsing indefinitely without producing
-a result.
+Inference requests are not cut off by a short HTTP client timeout. Long-thinking models can continue
+until the task is cancelled or reaches its configured execution boundary.
 
-## Local configuration
+## Safety model
 
-The desktop Settings UI is recommended, but the same routes can be configured in
-`agent-farm.local.json`. This file is intentionally ignored by Git.
+Agent Farm is designed for observable, bounded execution rather than unrestricted autonomy.
+
+- **Secrets stay local.** API keys live in `.agent-farm/secrets.env` or the process environment and
+  are never returned by the Settings API.
+- **Writes are scoped.** `allowed_paths` and `forbidden_paths` are checked during execution and again
+  during review.
+- **Workers are isolated.** Candidate changes happen in per-Worker worktrees, not the main workspace.
+- **Commands avoid a shell.** The command runner accepts bounded executable and argument structures.
+- **Risky actions can pause.** File, command, and network operations support durable approvals.
+- **Repository code is contained.** Secure test execution uses a network-denied Docker sandbox with
+  resource limits and no silent host fallback.
+- **Changes remain reversible.** Apply and merge operations use checkpoints and rollback records.
+
+These controls reduce risk; they do not turn model-generated work into trusted human-reviewed code.
+See the full [security model](docs/SECURITY.md).
+
+## Architecture at a glance
+
+```text
+Native WinUI 3 desktop
+    |  threads, composer, settings, streaming execution, review
+    v
+Loopback daemon API (HTTP + SSE)
+    |  durable SQLite jobs, events, approvals, usage, diagnostics
+    +-- Supervisor planner and final reviewer
+    +-- cost- and capability-aware farm scheduler
+    v
+Native agent runtime
+    |  Responses + Chat Completions adapters
+    |  repository, command, attachment, and research tools
+    +-- Worker A -> isolated worktree -> patch + evidence
+    +-- Worker B -> isolated worktree -> patch + evidence
+    +-- Worker N -> isolated worktree -> patch + evidence
+```
+
+The daemon can outlive the desktop window, preserve in-flight state, and replay missed events when the
+client reconnects. Debug builds call the Python source runtime; Release builds call the frozen
+`AgentFarmBackend.exe` bundled with the application.
+
+For details, see [Architecture](docs/ARCHITECTURE.md), [Protocol](docs/PROTOCOL.md), and
+[Desktop application](docs/DESKTOP_APP.md).
+
+## Local configuration and credentials
+
+The native Settings UI is the recommended configuration path. For automation, the same routes can be
+stored in the ignored `agent-farm.local.json` file:
 
 ```json
 {
   "agent_backend": "native",
-  "supervisor_provider": "openai-main",
-  "supervisor_model": "your-premium-model",
-  "default_worker_profile": "cheap",
+  "supervisor_provider": "premium-openai",
+  "supervisor_model": "your-high-capability-model",
+  "default_worker_profile": "economy",
   "max_parallel_workers": 2,
+  "secrets_env": ".agent-farm/secrets.env",
   "model_providers": {
-    "openai-main": {
+    "premium-openai": {
       "template_id": "openai",
-      "name": "OpenAI",
+      "name": "OpenAI Supervisor",
       "base_url": "https://api.openai.com/v1",
       "env_key": "OPENAI_API_KEY",
       "wire_api": "responses"
     },
-    "deepseek": {
+    "economy-deepseek": {
       "template_id": "deepseek",
-      "name": "DeepSeek",
+      "name": "DeepSeek Workers",
       "base_url": "https://api.deepseek.com",
       "env_key": "DEEPSEEK_API_KEY",
       "wire_api": "chat"
     }
   },
   "worker_profiles": {
-    "cheap": {
-      "display_name": "DeepSeek Worker",
-      "provider": "deepseek",
-      "model": "deepseek-v4-flash",
-      "reasoning_mode": "enabled"
+    "economy": {
+      "display_name": "Economy Worker",
+      "provider": "economy-deepseek",
+      "model": "your-economical-model",
+      "timeout_seconds": 900
     }
-  },
-  "codex_config_overrides": {
-    "sandbox_workspace_write.network_access": true
   }
 }
 ```
 
-Store real credentials only in `.agent-farm/secrets.env` or the process environment:
+Store credentials separately:
 
 ```dotenv
 OPENAI_API_KEY=replace-with-your-key
 DEEPSEEK_API_KEY=replace-with-your-key
 ```
 
-Never commit `agent-farm.local.json`, `.agent-farm/secrets.env`, `.env`, or real API keys.
+Never commit `agent-farm.local.json`, `.agent-farm/secrets.env`, `.env`, diagnostic bundles, or real
+API keys.
 
-## Command-line interface
+## CLI and automation
 
-The desktop app is the primary interface, but the CLI remains useful for automation and debugging.
+The desktop app is the primary interface. The Python CLI remains available for automation,
+integration tests, and diagnostics:
 
 ```powershell
-# Initialize public and local configuration templates
-python -m agent_farm init
-python -m agent_farm init-local
+# Install from source
+python -m pip install -e ".[test]"
 
-# Start the browser-based local console
-python -m agent_farm ui --repo .
-
-# Start the compatibility desktop launcher
-python -m agent_farm desktop --repo .
+# Create public and local configuration templates
+agent-farm init
+agent-farm init-local
 
 # Run a validated multi-Worker plan
-python -m agent_farm farm-run `
+agent-farm farm-run `
   --repo . `
   --plan .\worker-plan.json `
   --config .\agent-farm.local.json
 
 # Inspect the aggregate review package
-python -m agent_farm farm-review --farm .\.agent-farm\farms\<farm-id>
+agent-farm farm-review --farm .\.agent-farm\farms\<farm-id>
 ```
 
-Run `python -m agent_farm --help` to see the single-Worker review, merge, cleanup, and farm decision
-commands.
+Run `agent-farm --help` for single-Worker run, review, merge, cleanup, farm decision, local console,
+and compatibility launcher commands.
 
-## Development
+## Develop Agent Farm
 
 ### Prerequisites
 
 - Python 3.11 or newer.
 - .NET 10 SDK.
 - Windows App SDK / WinUI 3 build dependencies.
-- Microsoft WinApp CLI.
+- Microsoft WinApp CLI for packaged Debug launch and native UI automation.
 - Git.
 
-Install the Python project with desktop and build dependencies:
+Install development dependencies:
 
 ```powershell
-python -m pip install -e ".[desktop,build]"
+python -m pip install -e ".[test,build]"
 ```
 
-### Run the Python tests
+Run the Python suite and native state tests:
 
 ```powershell
-python -m pytest -q
+python -X utf8 -m pytest -q tests
+dotnet run --project .\AgentFarm.Desktop.StateTests\AgentFarm.Desktop.StateTests.csproj
 ```
 
-The suite covers configuration and migrations, secrets, provider contracts, model streaming,
-worktree isolation, machine review, Supervisor planning, collaborative synthesis, durable runtime
-state, diagnostics, security boundaries, HTTP protocol behavior, MVVM state, and native UI contracts.
-
-### Debug build
-
-Debug launches the Python backend from source, so backend changes do not require a new PyInstaller
-bundle. XAML and C# changes still use the normal fast WinUI Debug rebuild:
+Build native WinUI with warnings treated as errors:
 
 ```powershell
-.\scripts\build_native_windows.ps1 -Configuration Debug -Platform x64
+dotnet build .\AgentFarm.Desktop\AgentFarm.Desktop.csproj `
+  --configuration Debug `
+  -p:Platform=x64 `
+  -warnaserror
 ```
 
-Use the WinUI `BuildAndRun.ps1` workflow or `winapp run` to launch a packaged WinUI debug build. Do
-not run the generated WinUI executable directly because it requires package identity.
+Use `winapp run` or the repository's WinUI workflow to launch the packaged Debug output. Do not run
+the generated WinUI executable directly because the application requires package identity.
 
-### Release build
+Release packaging freezes the Python backend, builds a self-contained WinUI app, signs and timestamps
+the MSIX, verifies the frozen runtime, creates AppInstaller metadata, and writes SHA256 checksums. See
+[Releasing Agent Farm](docs/RELEASING.md).
 
-Release freezes the backend with PyInstaller and copies it into the WinUI output:
-
-```powershell
-.\scripts\build_native_windows.ps1 -Configuration Release -Platform x64
-```
-
-The release output is written below:
+## Repository map
 
 ```text
-AgentFarm.Desktop\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64
+AgentFarm.Desktop/       Native WinUI 3 and XAML application
+AgentFarm.Core/          Platform-neutral desktop state and contracts
+agent_farm/              Supervisor, Workers, tools, routing, storage, and API
+examples/                Safe configuration and Worker Plan examples
+packaging/               Frozen backend and Windows release definitions
+scripts/                 Build, packaging, verification, and UI automation
+tests/                   Unit, integration, security, protocol, and UI tests
+docs/                    Public architecture, protocol, security, and release docs
 ```
 
-### Create a signed and timestamped MSIX
+Useful references:
 
-```powershell
-.\scripts\package_native_release.ps1 `
-  -Version 0.5.0.9 `
-  -Channel stable `
-  -PfxPath $env:AGENT_FARM_SIGNING_PFX `
-  -Publisher $env:AGENT_FARM_PUBLISHER
-```
+- [Architecture](docs/ARCHITECTURE.md)
+- [Desktop application](docs/DESKTOP_APP.md)
+- [Protocol](docs/PROTOCOL.md)
+- [Security](docs/SECURITY.md)
+- [Pricing and usage](docs/PRICING_AND_USAGE.md)
+- [Current limitations](docs/LIMITATIONS.md)
+- [Release process](docs/RELEASING.md)
 
-The script rejects self-signed production certificates, verifies the signer and timestamp, runs a
-frozen-backend smoke test, creates an AppInstaller feed, and writes SHA256 checksums. Never commit a
-PFX file. Full procedure: [docs/RELEASING.md](docs/RELEASING.md).
+## Current preview limitations
 
-## Repository layout
+- The checked-in installer is development-signed and requires manual certificate trust.
+- The current package targets Windows x64 only.
+- Public Stable and Preview update channels still require production-signed GitHub Release assets.
+- Secure repository-code execution depends on Docker Desktop and the relevant language image.
+- Provider behavior can vary when a vendor implements only part of a compatible API.
+- Public research cannot bypass authentication, paywalls, anti-bot controls, or inaccessible sources.
+- Model output still requires human judgment for production, financial, medical, legal, or other
+  high-impact decisions.
 
-```text
-AgentFarm.Desktop/       Pure native WinUI 3/XAML desktop application
-agent_farm/              Python product backend and orchestration runtime
-agent_farm/web/          Optional browser console (not used by the desktop app)
-docs/                    Product, architecture, and roadmap documents
-examples/                Safe configuration and plan examples
-packaging/               PyInstaller entry points and build specifications
-scripts/                 Windows build scripts
-tests/                   Automated unit, integration, and UI-contract tests
-```
-
-Maintainer references: [Architecture](docs/ARCHITECTURE.md) ·
-[Protocol](docs/PROTOCOL.md) · [Security](docs/SECURITY.md) ·
-[Releasing](docs/RELEASING.md) · [Current limitations](docs/LIMITATIONS.md)
-
-Important backend modules:
-
-| Module | Responsibility |
-| --- | --- |
-| `agent_farm/model_client.py` | Responses and Chat Completions protocol clients |
-| `agent_farm/native_agent.py` | Multi-turn tool loop and bounded tool runtime |
-| `agent_farm/supervisor.py` | Planning, review, and collaborative synthesis |
-| `agent_farm/farm.py` | Parallel Worker orchestration and farm state |
-| `agent_farm/orchestrator.py` | Per-Worker lifecycle and worktree execution |
-| `agent_farm/review.py` | Deterministic machine review gates |
-| `agent_farm/provider_templates.py` | Built-in provider connection templates |
-| `agent_farm/provider_catalog.py` | Live provider model discovery and metadata |
-| `agent_farm/web_server.py` | Loopback desktop API |
-| `agent_farm/threads.py` | Persistent threads, turns, and event storage |
-
-## Current limitations
-
-- The repository preview installer requires manual trust of a development certificate; the
-  production workflow requires a project-owner-provided CA certificate.
-- The current release is x64-only.
-- Automatic updates require signed assets to be published through the Stable or Preview GitHub
-  Release channel.
-- The default secure command runner requires a running Docker Desktop and a pre-pulled language
-  image; registry access depends on the user's network configuration.
-- Provider compatibility can vary when a vendor exposes only a partial OpenAI-compatible API.
-- Web extraction cannot bypass authentication, paywalls, anti-bot pages, or inaccessible sources.
-- Agent Farm enforces engineering boundaries, but model output still requires appropriate human
-  judgment for high-risk code, financial, medical, legal, or production decisions.
-
-## Roadmap
-
-- Better per-task token, latency, and cost accounting.
-- More deterministic retry and recovery controls.
-- Richer diff, artifact, and evidence review in the desktop UI.
-- Reusable task templates and scheduled farms.
-- Additional provider-native protocol adapters where compatibility layers are incomplete.
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/PRODUCT_KERNEL_PLAN.md](docs/PRODUCT_KERNEL_PLAN.md)
-for the longer-term product direction.
+The complete and versioned list is maintained in [Current limitations](docs/LIMITATIONS.md).
 
 ## Contributing
 
-Issues and focused pull requests are welcome. Before submitting a change:
+Issues and focused pull requests are welcome.
 
-1. Keep provider credentials and local configuration out of the repository.
+1. Keep credentials, local routes, internal progress ledgers, and build artifacts out of Git.
 2. Add or update tests for behavior changes.
-3. Run the full Python test suite.
-4. For desktop changes, build the WinUI project for x64 Debug and Release as appropriate.
+3. Run the complete Python suite.
+4. Build the native x64 project for desktop changes.
 5. Document new configuration fields, provider behavior, and user-visible limitations.
 
 ## License
 
 Agent Farm is released under the [MIT License](LICENSE).
 
-## Star History
+## Star history
 
 <p align="center">
   <a href="https://github.com/Freddy-Hexas/Agent-Farm/stargazers">
