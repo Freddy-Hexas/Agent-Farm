@@ -15,6 +15,7 @@ from agent_farm.desktop_server import (
     native_runtime_url,
     probe_descriptor,
     ready_message,
+    runtime_fingerprint_matches,
 )
 
 
@@ -36,12 +37,24 @@ def test_ready_message_is_machine_readable() -> None:
     }
 
 
+def test_runtime_reuse_requires_matching_descriptor_and_health_fingerprints() -> None:
+    descriptor = {
+        "runtime_fingerprint": "current-build",
+        "health": {"runtime_fingerprint": "current-build"},
+    }
+
+    assert runtime_fingerprint_matches(descriptor, expected_fingerprint="current-build")
+    assert not runtime_fingerprint_matches(descriptor, expected_fingerprint="new-build")
+    assert runtime_fingerprint_matches(descriptor, expected_fingerprint="")
+
+
 def test_daemon_is_single_instance_reports_health_and_stops_gracefully() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
         env = os.environ.copy()
         env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+        env["AGENT_FARM_RUNTIME_FINGERPRINT"] = "desktop-server-integration"
         command = [
             sys.executable,
             "-m",
@@ -74,6 +87,7 @@ def test_daemon_is_single_instance_reports_health_and_stops_gracefully() -> None
             assert descriptor is not None
             assert descriptor["pid"] == daemon.pid
             assert descriptor["health"]["status"] == "ok"
+            assert descriptor["health"]["runtime_fingerprint"] == "desktop-server-integration"
 
             duplicate = subprocess.run(
                 [*command, "--daemon"],

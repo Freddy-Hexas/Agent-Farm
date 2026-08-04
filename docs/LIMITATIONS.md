@@ -1,6 +1,6 @@
 # Current limitations
 
-This list is synchronized with Agent Farm 0.5.0.8.
+This list is synchronized with Agent Farm 0.5.0.9.
 
 - The checked-in preview MSIX is development-signed and requires manual certificate trust. The
   production workflow is implemented, but the project owner must supply a CA-issued certificate and

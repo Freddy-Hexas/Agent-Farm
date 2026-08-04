@@ -7,8 +7,8 @@ Agent Farm is a Windows desktop application for autonomous multi-agent work. A h
 **Worker**, reviews the evidence, and produces the final result. Workers can use substantially less
 expensive models than the Supervisor.
 
-[![Version](https://img.shields.io/badge/version-0.5.0.8-blue)](releases/v0.5.0.8)
-[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](releases/v0.5.0.8)
+[![Version](https://img.shields.io/badge/version-0.5.0.9-blue)](releases/v0.5.0.9)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](releases/v0.5.0.9)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 > [!IMPORTANT]
@@ -155,11 +155,11 @@ is not loaded by `AgentFarm.Desktop`.
 
 ### Install the current preview
 
-1. Open the [v0.5.0.8 download directory](releases/v0.5.0.8).
+1. Open the [v0.5.0.9 download directory](releases/v0.5.0.9).
 2. Download:
-   - [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.8/AgentFarm-Native-x64.msix)
-   - [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.8/AgentFarm-dev.cer)
-   - [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.8/SHA256SUMS.txt) for integrity verification
+   - [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-Native-x64.msix)
+   - [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-dev.cer)
+   - [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/SHA256SUMS.txt) for integrity verification
 3. Import `AgentFarm-dev.cer` into the current user's **Trusted People** certificate store.
 4. Double-click `AgentFarm-Native-x64.msix` and select **Install**.
 5. Launch **Agent Farm** from the Start menu.
@@ -351,7 +351,7 @@ AgentFarm.Desktop\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64
 
 ```powershell
 .\scripts\package_native_release.ps1 `
-  -Version 0.5.0.8 `
+  -Version 0.5.0.9 `
   -Channel stable `
   -PfxPath $env:AGENT_FARM_SIGNING_PFX `
   -Publisher $env:AGENT_FARM_PUBLISHER

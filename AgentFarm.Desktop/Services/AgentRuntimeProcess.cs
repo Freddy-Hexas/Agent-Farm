@@ -38,7 +38,14 @@ internal sealed class AgentRuntimeProcess : IDisposable
         var staleDescriptor = ReadRuntimeDescriptor(RepositoryRoot);
         if (staleDescriptor is not null)
         {
-            await RequestRuntimeStopAsync(staleDescriptor.Value.Uri, cancellationToken);
+            var stopRequested = await RequestRuntimeStopAsync(staleDescriptor.Value.Uri, cancellationToken);
+            if (stopRequested)
+            {
+                await WaitForRuntimeHandoffAsync(
+                    RepositoryRoot,
+                    staleDescriptor.Value.Pid,
+                    cancellationToken);
+            }
         }
 
         var startInfo = CreateStartInfo(RepositoryRoot);
@@ -317,7 +324,7 @@ internal sealed class AgentRuntimeProcess : IDisposable
         }
     }
 
-    private static async Task RequestRuntimeStopAsync(
+    private static async Task<bool> RequestRuntimeStopAsync(
         Uri runtimeUri,
         CancellationToken cancellationToken)
     {
@@ -329,15 +336,33 @@ internal sealed class AgentRuntimeProcess : IDisposable
         try
         {
             using var response = await client.PostAsync("api/runtime/stop", content, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
-            }
+            return response.IsSuccessStatusCode;
         }
         catch (HttpRequestException)
         {
             // A stale descriptor is harmless when its former process is already gone.
+            return false;
         }
+    }
+
+    private static async Task WaitForRuntimeHandoffAsync(
+        string repositoryRoot,
+        int staleProcessId,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var descriptor = ReadRuntimeDescriptor(repositoryRoot);
+            if (descriptor is null || descriptor.Value.Pid != staleProcessId)
+            {
+                return;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+        }
+
+        throw new TimeoutException("The previous Agent Farm daemon did not release the repository runtime in time.");
     }
 
     private static string ExpectedRuntimeFingerprint()

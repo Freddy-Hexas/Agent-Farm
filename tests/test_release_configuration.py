@@ -22,6 +22,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
             self.assertGreater(data["hours_between_update_checks"], 0)
 
         script = (ROOT / "scripts" / "package_native_release.ps1").read_text()
+        build_script = (ROOT / "scripts" / "build_native_windows.ps1").read_text()
         project = (ROOT / "AgentFarm.Desktop" / "AgentFarm.Desktop.csproj").read_text()
         self.assertIn("<WindowsAppSDKSelfContained", project)
         self.assertIn("<SelfContained", project)
@@ -39,6 +40,11 @@ class ReleaseConfigurationTests(unittest.TestCase):
             "test_frozen_backend.ps1",
         ):
             self.assertIn(contract, script)
+        self.assertIn('"AgentFarm.Desktop\\Assets"', build_script)
+        self.assertIn('"Assets"', build_script)
+        self.assertIn('"AppIcon.ico"', build_script)
+        self.assertIn('"AppX\\Backend"', build_script)
+        self.assertIn('"AppX\\Assets"', build_script)
 
     def test_release_workflow_requires_protected_signing_inputs(self) -> None:
         workflow_path = ROOT / ".github" / "workflows" / "release.yml"
@@ -63,7 +69,11 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertRegex(runtime_requirements, r"(?m)^pypdf==\d+\.\d+\.\d+$")
         self.assertIn("--vulnerable", text)
         self.assertIn("gitleaks/gitleaks-action", text)
-        self.assertIn("github/codeql-action/analyze", text)
+        self.assertIn("github/codeql-action/analyze@v4", text)
+        self.assertIn("actions/checkout@v6", text)
+        self.assertIn("actions/setup-python@v6", text)
+        self.assertIn("actions/setup-dotnet@v5", text)
+        self.assertIn("dotnet-quality: ga", text)
 
     def test_source_manifest_has_upgrade_stable_identity(self) -> None:
         root = ET.parse(ROOT / "AgentFarm.Desktop" / "Package.appxmanifest").getroot()

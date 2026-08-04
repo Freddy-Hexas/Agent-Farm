@@ -109,6 +109,8 @@ class NativeDesktopSourceTests(unittest.TestCase):
         self.assertIn('Path.Combine(repositoryRoot, ".agent-farm", "runtime.json")', runtime)
         self.assertIn("AGENT_FARM_RUNTIME_FINGERPRINT", runtime)
         self.assertIn("RequestRuntimeStopAsync", runtime)
+        self.assertIn("WaitForRuntimeHandoffAsync", runtime)
+        self.assertIn("staleDescriptor.Value.Pid", runtime)
         self.assertIn("ExpectedRuntimeFingerprint", runtime)
         self.assertIn('GetAsync<RuntimeHealth>("api/health"', client)
         self.assertIn("MonitorRuntimeAsync", page)
@@ -499,7 +501,10 @@ class NativeDesktopSourceTests(unittest.TestCase):
 
         self.assertIn('Key="N" Modifiers="Control"', xaml)
         self.assertIn('Key="F" Modifiers="Control"', xaml)
+        self.assertIn('Key="Left" Modifiers="Menu"', xaml)
         self.assertIn('Key="F6"', xaml)
+        self.assertIn('AutomationProperties.AutomationId="SettingsBackButton"', xaml)
+        self.assertIn("OnBackAccelerator", page)
         self.assertIn("OnNextRegionAccelerator", page)
         self.assertIn("FocusActiveSurface", page)
         for control in (

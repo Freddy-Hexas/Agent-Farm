@@ -30,14 +30,30 @@
         </Grid.RowDefinitions>
         <Grid Padding="{StaticResource PageHeaderPadding}" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <StackPanel Spacing="3">
+            <Button
+                x:Name="SettingsBackButton"
+                x:Uid="SettingsBack"
+                AutomationProperties.AutomationId="SettingsBackButton"
+                AutomationProperties.Name="Back"
+                Width="36"
+                Height="36"
+                Padding="0"
+                VerticalAlignment="Top"
+                Background="Transparent"
+                BorderThickness="0"
+                Command="{x:Bind ViewModel.ReturnFromSettingsCommand}"
+                ToolTipService.ToolTip="Back (Alt+Left)">
+                <FontIcon FontSize="{StaticResource SubtitleFontSize}" Glyph="&#xE72B;" />
+            </Button>
+            <StackPanel Grid.Column="1" Spacing="3">
                 <TextBlock x:Uid="SettingsTitle" FontSize="{StaticResource TitleFontSize}" FontWeight="SemiBold" Text="Settings" />
                 <TextBlock x:Uid="SettingsSubtitle" FontSize="{StaticResource BodyFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="Native model routing and provider configuration. Changes apply to new runs." />
             </StackPanel>
-            <Button x:Name="SaveButton" x:Uid="SaveSettings" AutomationProperties.AutomationId="SaveSettingsButton" AutomationProperties.Name="Save settings" Grid.Column="1" Click="OnSave" Style="{StaticResource AccentButtonStyle}" Content="Save settings" />
+            <Button x:Name="SaveButton" x:Uid="SaveSettings" AutomationProperties.AutomationId="SaveSettingsButton" AutomationProperties.Name="Save settings" Grid.Column="2" Click="OnSave" Style="{StaticResource AccentButtonStyle}" Content="Save settings" />
         </Grid>
 
         <Grid Grid.Row="1">

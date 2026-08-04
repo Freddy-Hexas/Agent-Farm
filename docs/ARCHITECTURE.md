@@ -1,6 +1,6 @@
 # Agent Farm architecture
 
-This document describes the architecture shipped in Agent Farm 0.5.0.8. The primary client is a
+This document describes the architecture shipped in Agent Farm 0.5.0.9. The primary client is a
 native WinUI 3 application; the optional browser console is a separate compatibility surface and
 is never embedded in the desktop window.
 

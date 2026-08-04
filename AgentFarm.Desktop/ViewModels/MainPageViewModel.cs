@@ -19,6 +19,7 @@ public partial class MainPageViewModel : ObservableObject
     public IRelayCommand ShowWorkspaceCommand => Shell.ShowWorkspaceCommand;
     public IRelayCommand ShowRunsCommand => Shell.ShowRunsCommand;
     public IRelayCommand ShowSettingsCommand => Shell.ShowSettingsCommand;
+    public IRelayCommand ReturnFromSettingsCommand => Shell.ReturnFromSettingsCommand;
     public IRelayCommand ToggleNavigationPaneCommand => Shell.ToggleNavigationPaneCommand;
     public IRelayCommand ShowAgentRoutesCommand => Settings.ShowAgentRoutesCommand;
     public IRelayCommand ShowProvidersCommand => Settings.ShowProvidersCommand;

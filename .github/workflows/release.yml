@@ -32,16 +32,17 @@ jobs:
     timeout-minutes: 45
     environment: production-signing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+          dotnet-quality: ga
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip pytest -e ".[build]"
+        run: python -m pip install --upgrade pip -e ".[build,test]"
       - name: Install Windows App Development CLI
         shell: powershell
         run: |
@@ -70,7 +71,7 @@ jobs:
             -PfxPath "$env:RUNNER_TEMP\agent-farm-signing.pfx" `
             -Publisher $env:AGENT_FARM_PUBLISHER
       - name: Upload signed release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AgentFarm-${{ inputs.channel }}-${{ inputs.version }}
           if-no-files-found: error

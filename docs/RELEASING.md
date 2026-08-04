@@ -1,6 +1,6 @@
 # Releasing Agent Farm for Windows
 
-This procedure applies to Agent Farm 0.5.0.8 and later. Release builds are x64, self-contained WinUI
+This procedure applies to Agent Farm 0.5.0.9 and later. Release builds are x64, self-contained WinUI
 3 applications with a frozen Python backend.
 
 ## Release channels
@@ -54,7 +54,7 @@ Development certificates are only for validating the mechanics:
 
 ```powershell
 .\scripts\package_native_release.ps1 `
-  -Version 0.5.0.8 `
+  -Version 0.5.0.9 `
   -Channel stable `
   -PfxPath .\dist\signing\AgentFarm-dev.pfx `
   -PfxPassword password `

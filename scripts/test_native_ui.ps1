@@ -123,6 +123,7 @@ Test-UI "Both side panes are independently draggable" {
 Test-UI "Settings navigation works" {
     winapp ui invoke SettingsNavigationButton -a $AppPid
     winapp ui wait-for SupervisorProviderCombo -a $AppPid -t 5000
+    winapp ui wait-for SettingsBackButton -a $AppPid -t 5000
 }
 Test-UI "Provider settings navigation works" {
     winapp ui invoke ProvidersSettingsButton -a $AppPid
@@ -131,6 +132,12 @@ Test-UI "Provider settings navigation works" {
 }
 Test-UI "Runs navigation works" {
     winapp ui invoke RunsNavigationButton -a $AppPid
+    winapp ui wait-for RunsViewTitle -a $AppPid --value "Run history" -t 5000
+}
+Test-UI "Settings back returns to the originating surface" {
+    winapp ui invoke SettingsNavigationButton -a $AppPid
+    winapp ui wait-for SettingsBackButton -a $AppPid -t 5000
+    winapp ui invoke SettingsBackButton -a $AppPid
     winapp ui wait-for RunsViewTitle -a $AppPid --value "Run history" -t 5000
 }
 Test-UI "Workspace navigation works" {

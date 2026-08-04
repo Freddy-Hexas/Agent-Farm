@@ -82,6 +82,8 @@ public partial class RuntimeStateViewModel : ObservableObject
 
 public partial class ShellViewModel : ObservableObject
 {
+    private ShellSurface _surfaceBeforeSettings = ShellSurface.Workspace;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsWorkspaceVisible))]
     [NotifyPropertyChangedFor(nameof(IsRunsVisible))]
@@ -99,13 +101,39 @@ public partial class ShellViewModel : ObservableObject
     public bool IsSettingsVisible => ActiveSurface == ShellSurface.Settings;
 
     [RelayCommand]
-    private void ShowWorkspace() => ActiveSurface = ShellSurface.Workspace;
+    private void ShowWorkspace() => NavigateTo(ShellSurface.Workspace);
 
     [RelayCommand]
-    private void ShowRuns() => ActiveSurface = ShellSurface.Runs;
+    private void ShowRuns() => NavigateTo(ShellSurface.Runs);
 
     [RelayCommand]
-    private void ShowSettings() => ActiveSurface = ShellSurface.Settings;
+    private void ShowSettings()
+    {
+        if (ActiveSurface != ShellSurface.Settings)
+        {
+            _surfaceBeforeSettings = ActiveSurface;
+        }
+
+        ActiveSurface = ShellSurface.Settings;
+    }
+
+    [RelayCommand]
+    private void ReturnFromSettings()
+    {
+        if (ActiveSurface != ShellSurface.Settings)
+        {
+            return;
+        }
+
+        ActiveSurface = _surfaceBeforeSettings == ShellSurface.Settings
+            ? ShellSurface.Workspace
+            : _surfaceBeforeSettings;
+    }
+
+    private void NavigateTo(ShellSurface surface)
+    {
+        ActiveSurface = surface;
+    }
 
     [RelayCommand]
     private void ToggleNavigationPane() => IsNavigationPaneCollapsed = !IsNavigationPaneCollapsed;

@@ -272,6 +272,17 @@ public sealed partial class MainPage : Page
         args.Handled = true;
     }
 
+    private void OnBackAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!ViewModel.Shell.IsSettingsVisible)
+        {
+            return;
+        }
+
+        ViewModel.Shell.ReturnFromSettingsCommand.Execute(null);
+        args.Handled = true;
+    }
+
     private void OnNextRegionAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         var focusActions = new List<Action>();

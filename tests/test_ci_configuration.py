@@ -18,7 +18,12 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertIn("-warnaserror", workflow)
         self.assertIn("Microsoft.WinAppCli", workflow)
         self.assertIn("scripts\\test_native_ui.ps1", workflow)
-        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn('python -m pip install --upgrade pip -e ".[test]"', workflow)
+        self.assertIn("actions/checkout@v6", workflow)
+        self.assertIn("actions/setup-python@v6", workflow)
+        self.assertIn("actions/setup-dotnet@v5", workflow)
+        self.assertIn("dotnet-quality: ga", workflow)
+        self.assertIn("actions/upload-artifact@v7", workflow)
         self.assertIn("if: always()", workflow)
 
 

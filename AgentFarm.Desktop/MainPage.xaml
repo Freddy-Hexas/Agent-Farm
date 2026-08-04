@@ -95,6 +95,7 @@
     <Page.KeyboardAccelerators>
         <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="OnNewTaskAccelerator" />
         <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="OnSearchAccelerator" />
+        <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="OnBackAccelerator" />
         <KeyboardAccelerator Key="F6" Invoked="OnNextRegionAccelerator" />
     </Page.KeyboardAccelerators>
 

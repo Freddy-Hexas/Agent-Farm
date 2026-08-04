@@ -15,6 +15,12 @@ shell.ShowRunsCommand.Execute(null);
 Assert(shell.ActiveSurface == ShellSurface.Runs && shell.IsRunsVisible, "Runs command must switch the shell.");
 shell.ShowSettingsCommand.Execute(null);
 Assert(shell.IsSettingsVisible && !shell.IsWorkspaceVisible, "Settings must hide the workspace.");
+shell.ReturnFromSettingsCommand.Execute(null);
+Assert(shell.ActiveSurface == ShellSurface.Runs, "Settings back must return to the originating Runs surface.");
+shell.ShowWorkspaceCommand.Execute(null);
+shell.ShowSettingsCommand.Execute(null);
+shell.ReturnFromSettingsCommand.Execute(null);
+Assert(shell.ActiveSurface == ShellSurface.Workspace, "Settings back must return to the originating Workspace surface.");
 shell.ToggleNavigationPaneCommand.Execute(null);
 Assert(shell.IsNavigationPaneCollapsed, "Navigation toggle must update shell state.");
 

@@ -1,6 +1,6 @@
 # Desktop runtime protocol
 
-Agent Farm 0.5.0.8 uses loopback HTTP protocol version `1`. The native client discovers the daemon
+Agent Farm 0.5.0.9 uses loopback HTTP protocol version `1`. The native client discovers the daemon
 from `.agent-farm/runtime.json`, calls `/api/protocol`, and initializes a session before relying on
 optional capabilities.
 
@@ -26,7 +26,7 @@ X-Correlation-ID: 6f4f14d4-0f04-4a46-a432-f786a7a43a03
 
 {
   "client_name": "AgentFarm.Desktop",
-  "client_version": "0.5.0.8",
+  "client_version": "0.5.0.9",
   "protocol_versions": [1],
   "capabilities": ["model-deltas.v1", "reconnect-cursor.v1"],
   "required_capabilities": ["durable-jobs.v1", "typed-messages.v1"]

@@ -1,0 +1,11 @@
+<svg width="630" height="580" viewBox="0 0 630 580" xmlns="http://www.w3.org/2000/svg" overflow="hidden">
+  <g transform="translate(-230 -70)">
+    <path d="M230 360C230 287.098 289.322 228 362.5 228 435.678 228 495 287.098 495 360 495 432.902 435.678 492 362.5 492 289.322 492 230 432.902 230 360Z" fill="#017BC6" fill-rule="evenodd"/>
+    <path d="M702 152.5C702 110.802 735.802 77 777.5 77 819.198 77 853 110.802 853 152.5 853 194.197 819.198 228 777.5 228 735.802 228 702 194.197 702 152.5Z" stroke="#017BC6" stroke-width="12" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+    <path d="M702 360C702 318.026 735.802 284 777.5 284 819.198 284 853 318.026 853 360 853 401.974 819.198 436 777.5 436 735.802 436 702 401.974 702 360Z" stroke="#017BC6" stroke-width="12" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+    <path d="M702 567.5C702 525.802 735.802 492 777.5 492 819.198 492 853 525.802 853 567.5 853 609.198 819.198 643 777.5 643 735.802 643 702 609.198 702 567.5Z" stroke="#017BC6" stroke-width="12" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+    <path d="M0 0 284.827 132.283" stroke="#017BC6" stroke-width="12" stroke-miterlimit="8" fill="none" fill-rule="evenodd" transform="matrix(1 0 0 -1 417 284.283)"/>
+    <path d="M441 360 702.636 360" stroke="#017BC6" stroke-width="12" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+    <path d="M406 429 702.692 568.11" stroke="#017BC6" stroke-width="12" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+  </g>
+</svg>

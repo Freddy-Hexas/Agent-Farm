@@ -75,6 +75,26 @@ def probe_descriptor(path: Path, *, timeout: float = 1.0) -> dict[str, Any] | No
     return {**descriptor, "health": health}
 
 
+def runtime_fingerprint_matches(
+    descriptor: dict[str, Any],
+    *,
+    expected_fingerprint: str | None = None,
+) -> bool:
+    expected = (
+        expected_fingerprint
+        if expected_fingerprint is not None
+        else os.environ.get("AGENT_FARM_RUNTIME_FINGERPRINT", "")
+    )
+    if not expected:
+        return True
+    health = descriptor.get("health")
+    return (
+        descriptor.get("runtime_fingerprint") == expected
+        and isinstance(health, dict)
+        and health.get("runtime_fingerprint") == expected
+    )
+
+
 def request_daemon_stop(path: Path, *, timeout: float = 2.0) -> bool:
     descriptor = probe_descriptor(path, timeout=timeout)
     if descriptor is None:
@@ -156,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
             acquired_after_handoff = False
             while time.monotonic() < deadline:
                 descriptor = probe_descriptor(descriptor_path)
-                if descriptor is not None:
+                if descriptor is not None and runtime_fingerprint_matches(descriptor):
                     print(ready_message(descriptor["url"]), flush=True)
                     return 0
                 # A stopping daemon removes its descriptor just before it

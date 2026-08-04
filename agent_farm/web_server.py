@@ -5,6 +5,7 @@ import os
 import ipaddress
 import socket
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -1310,6 +1311,14 @@ class ConsoleHTTPServer(ThreadingHTTPServer):
         self.assets = _static_assets() if serve_assets else {}
         self.stop_callback = stop_callback
         super().__init__(address, ConsoleRequestHandler)
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        if isinstance(
+            sys.exception(),
+            (BrokenPipeError, ConnectionResetError, ConnectionAbortedError),
+        ):
+            return
+        super().handle_error(request, client_address)
 
     def request_stop(self) -> None:
         if self.stop_callback is not None:
