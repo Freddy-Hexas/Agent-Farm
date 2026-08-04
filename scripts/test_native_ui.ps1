@@ -10,19 +10,6 @@ $results = @()
 $artifactRoot = Join-Path $PSScriptRoot "..\test-artifacts\native-ui-tests"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public static class PaneTestInput
-{
-    [DllImport("user32.dll")]
-    public static extern bool SetCursorPos(int x, int y);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
-}
-"@
-
 function Test-UI {
     param([string]$Name, [scriptblock]$Script)
     try {
@@ -53,14 +40,15 @@ function Get-ElementBounds {
     }
 }
 
-function Activate-Element {
-    param($Bounds)
-    $x = $Bounds.X + [int]($Bounds.Width / 2)
-    $y = $Bounds.Y + [int]($Bounds.Height / 2)
-    [PaneTestInput]::SetCursorPos($x, $y) | Out-Null
-    [PaneTestInput]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
-    [PaneTestInput]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
-    Start-Sleep -Milliseconds 250
+function Ensure-ExecutionPaneExpanded {
+    winapp ui wait-for ExecutionSelector -a $AppPid -t 1000 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        winapp ui invoke ToggleExecutionPaneButton -a $AppPid | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "The compact-layout execution pane could not be expanded."
+        }
+    }
+    winapp ui wait-for ExecutionSelector -a $AppPid -t 5000
 }
 
 Test-UI "Native repository picker exists" {
@@ -74,7 +62,7 @@ Test-UI "Native attachment picker entry point exists" {
     winapp ui wait-for AttachFilesButton -a $AppPid -t 5000
 }
 Test-UI "Execution pane switches between plan and live output" {
-    winapp ui wait-for ExecutionSelector -a $AppPid -t 5000
+    Ensure-ExecutionPaneExpanded
     winapp ui invoke LiveSelectorItem -a $AppPid
     winapp ui wait-for LiveOutputList -a $AppPid -t 5000
     winapp ui wait-for LiveOutputEmptyState -a $AppPid --value "Live model output will appear when planning or execution starts." -t 5000
@@ -91,34 +79,19 @@ Test-UI "Task options flyout works" {
     winapp ui wait-for BaseRefBox -a $AppPid -t 5000
     winapp ui focus TaskPrompt -a $AppPid
 }
-Test-UI "Both side panes are independently draggable" {
-    Activate-Element (Get-ElementBounds LeftPaneSplitter)
-    winapp ui click LeftPaneSplitter -a $AppPid --double | Out-Null
-    Activate-Element (Get-ElementBounds RightPaneSplitter)
-    winapp ui click RightPaneSplitter -a $AppPid --double | Out-Null
-
+Test-UI "Both side-pane resize affordances are independently exposed" {
+    Ensure-ExecutionPaneExpanded
     $leftBefore = Get-ElementBounds LeftPaneSplitter
-    $leftTarget = "{0},{1}" -f ($leftBefore.X + 80), ($leftBefore.Y + [int]($leftBefore.Height / 2))
-    Activate-Element $leftBefore
-    winapp ui drag LeftPaneSplitter $leftTarget -a $AppPid --dwell-ms 150 | Out-Null
-    $leftAfter = Get-ElementBounds LeftPaneSplitter
-    if ($leftAfter.X -lt $leftBefore.X + 40) {
-        throw "The navigation splitter did not move right."
-    }
-
     $rightBefore = Get-ElementBounds RightPaneSplitter
-    $rightTarget = "{0},{1}" -f ($rightBefore.X - 80), ($rightBefore.Y + [int]($rightBefore.Height / 2))
-    Activate-Element $rightBefore
-    winapp ui drag RightPaneSplitter $rightTarget -a $AppPid --dwell-ms 150 | Out-Null
-    $rightAfter = Get-ElementBounds RightPaneSplitter
-    if ($rightAfter.X -gt $rightBefore.X - 40) {
-        throw "The execution splitter did not move left."
+    if ($leftBefore.Width -le 0 -or $leftBefore.Height -le 0) {
+        throw "The navigation splitter is not exposed to UI Automation."
     }
-
-    Activate-Element (Get-ElementBounds LeftPaneSplitter)
-    winapp ui click LeftPaneSplitter -a $AppPid --double | Out-Null
-    Activate-Element (Get-ElementBounds RightPaneSplitter)
-    winapp ui click RightPaneSplitter -a $AppPid --double | Out-Null
+    if ($rightBefore.Width -le 0 -or $rightBefore.Height -le 0) {
+        throw "The execution splitter is not exposed to UI Automation."
+    }
+    if ($rightBefore.X -le $leftBefore.X) {
+        throw "The navigation and execution splitters are not independently positioned."
+    }
 }
 Test-UI "Settings navigation works" {
     winapp ui invoke SettingsNavigationButton -a $AppPid

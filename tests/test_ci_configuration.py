@@ -32,6 +32,8 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertIn("if: always()", workflow)
         native_ui_script = (ROOT / "scripts" / "test_native_ui.ps1").read_text(encoding="utf-8")
         self.assertIn("::error title=", native_ui_script)
+        self.assertIn("Ensure-ExecutionPaneExpanded", native_ui_script)
+        self.assertIn("ToggleExecutionPaneButton", native_ui_script)
         ci_ui_script = (ROOT / "scripts" / "test_native_ui_ci.ps1").read_text(encoding="utf-8")
         self.assertIn("test_native_ui.ps1", ci_ui_script)
         self.assertIn("AGENT_FARM_SOURCE_ROOT", ci_ui_script)
