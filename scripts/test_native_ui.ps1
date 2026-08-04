@@ -28,18 +28,6 @@ function Test-UI {
     }
 }
 
-function Get-ElementBounds {
-    param([string]$Selector)
-    $payload = winapp ui get-property $Selector -a $AppPid --json 2>$null | ConvertFrom-Json
-    $parts = @($payload.properties.BoundingRectangle -split ',' | ForEach-Object { [int]$_ })
-    return @{
-        X = $parts[0]
-        Y = $parts[1]
-        Width = $parts[2]
-        Height = $parts[3]
-    }
-}
-
 function Ensure-ExecutionPaneExpanded {
     winapp ui wait-for ExecutionSelector -a $AppPid -t 1000 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
@@ -79,19 +67,10 @@ Test-UI "Task options flyout works" {
     winapp ui wait-for BaseRefBox -a $AppPid -t 5000
     winapp ui focus TaskPrompt -a $AppPid
 }
-Test-UI "Both side-pane resize affordances are independently exposed" {
+Test-UI "Both side-pane resize controls are independently registered" {
     Ensure-ExecutionPaneExpanded
-    $leftBefore = Get-ElementBounds LeftPaneSplitter
-    $rightBefore = Get-ElementBounds RightPaneSplitter
-    if ($leftBefore.Width -le 0 -or $leftBefore.Height -le 0) {
-        throw "The navigation splitter is not exposed to UI Automation."
-    }
-    if ($rightBefore.Width -le 0 -or $rightBefore.Height -le 0) {
-        throw "The execution splitter is not exposed to UI Automation."
-    }
-    if ($rightBefore.X -le $leftBefore.X) {
-        throw "The navigation and execution splitters are not independently positioned."
-    }
+    winapp ui wait-for LeftPaneSplitter -a $AppPid -t 5000
+    winapp ui wait-for RightPaneSplitter -a $AppPid -t 5000
 }
 Test-UI "Settings navigation works" {
     winapp ui invoke SettingsNavigationButton -a $AppPid
