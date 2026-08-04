@@ -74,6 +74,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn("actions/setup-python@v6", text)
         self.assertIn("actions/setup-dotnet@v5", text)
         self.assertIn("dotnet-quality: ga", text)
+        self.assertIn("windows-2022", text)
 
     def test_source_manifest_has_upgrade_stable_identity(self) -> None:
         root = ET.parse(ROOT / "AgentFarm.Desktop" / "Package.appxmanifest").getroot()

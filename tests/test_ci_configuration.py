@@ -23,6 +23,8 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertIn("actions/setup-python@v6", workflow)
         self.assertIn("actions/setup-dotnet@v5", workflow)
         self.assertIn("dotnet-quality: ga", workflow)
+        self.assertIn("windows-2022", workflow)
+        self.assertNotIn("windows-latest", workflow)
         self.assertIn("actions/upload-artifact@v7", workflow)
         self.assertIn("if: always()", workflow)
 
