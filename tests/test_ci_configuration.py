@@ -13,10 +13,11 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
 
         for job in ("python-tests:", "native-build:", "native-ui:"):
             self.assertIn(job, workflow)
-        self.assertIn("python -m pytest -q", workflow)
+        self.assertIn("python -X utf8 -m pytest -q tests", workflow)
         self.assertIn("AgentFarm.Desktop/AgentFarm.Desktop.csproj", workflow)
         self.assertIn("-warnaserror", workflow)
-        self.assertIn("Microsoft.WinAppCli", workflow)
+        self.assertIn("microsoft/setup-WinAppCli@v0.1", workflow)
+        self.assertIn("scripts\\Invoke-CiCommand.ps1", workflow)
         self.assertIn("scripts\\test_native_ui.ps1", workflow)
         self.assertIn('python -m pip install --upgrade pip -e ".[test]"', workflow)
         self.assertIn("actions/checkout@v6", workflow)

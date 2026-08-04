@@ -32,7 +32,16 @@ jobs:
       - name: Install Agent Farm and test dependencies
         run: python -m pip install --upgrade pip -e ".[test]"
       - name: Run the complete Python suite
-        run: python -m pytest -q
+        if: runner.os != 'Windows'
+        run: python -X utf8 -m pytest -q tests
+      - name: Run the complete Python suite on Windows
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: >-
+          .\scripts\Invoke-CiCommand.ps1
+          -Title "Windows Python tests"
+          -Executable python
+          -Arguments @("-X", "utf8", "-m", "pytest", "-q", "tests")
 
   native-build:
     name: Native WinUI build and MVVM tests
@@ -47,11 +56,12 @@ jobs:
       - name: Run platform-neutral MVVM state tests
         run: dotnet run --project AgentFarm.Desktop.StateTests/AgentFarm.Desktop.StateTests.csproj
       - name: Build native WinUI with warnings treated as errors
+        shell: powershell
         run: >-
-          dotnet build AgentFarm.Desktop/AgentFarm.Desktop.csproj
-          --configuration Debug
-          -p:Platform=x64
-          -warnaserror
+          .\scripts\Invoke-CiCommand.ps1
+          -Title "Native WinUI build"
+          -Executable dotnet
+          -Arguments @("build", "AgentFarm.Desktop/AgentFarm.Desktop.csproj", "--configuration", "Debug", "-p:Platform=x64", "-warnaserror")
 
   native-ui:
     name: Native WinUI automation
@@ -75,16 +85,14 @@ jobs:
           New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -Force | Out-Null
           New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -Name AllowDevelopmentWithoutDevLicense -PropertyType DWord -Value 1 -Force | Out-Null
       - name: Install Windows App Development CLI
-        shell: powershell
-        run: |
-          winget install --id Microsoft.WinAppCli --exact --source winget --silent --accept-package-agreements --accept-source-agreements
-          winapp --version
+        uses: microsoft/setup-WinAppCli@v0.1
       - name: Build the native application
+        shell: powershell
         run: >-
-          dotnet build AgentFarm.Desktop/AgentFarm.Desktop.csproj
-          --configuration Debug
-          -p:Platform=x64
-          -warnaserror
+          .\scripts\Invoke-CiCommand.ps1
+          -Title "Native UI WinUI build"
+          -Executable dotnet
+          -Arguments @("build", "AgentFarm.Desktop/AgentFarm.Desktop.csproj", "--configuration", "Debug", "-p:Platform=x64", "-warnaserror")
       - name: Run the native UI batch
         shell: powershell
         run: |

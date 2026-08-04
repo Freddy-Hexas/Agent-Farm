@@ -32,7 +32,12 @@ jobs:
           dotnet-version: 10.0.x
           dotnet-quality: ga
       - if: matrix.language == 'csharp'
-        run: dotnet build AgentFarm.Desktop/AgentFarm.Desktop.csproj --configuration Debug -p:Platform=x64
+        shell: powershell
+        run: >-
+          .\scripts\Invoke-CiCommand.ps1
+          -Title "CodeQL CSharp build"
+          -Executable dotnet
+          -Arguments @("build", "AgentFarm.Desktop/AgentFarm.Desktop.csproj", "--configuration", "Debug", "-p:Platform=x64")
       - uses: github/codeql-action/analyze@v4
 
   dependencies:
@@ -56,9 +61,14 @@ jobs:
       - name: Audit transitive NuGet dependencies
         shell: powershell
         run: |
-          $report = dotnet list AgentFarm.Desktop/AgentFarm.Desktop.csproj package --vulnerable --include-transitive 2>&1
+          $report = dotnet package list --project AgentFarm.Desktop/AgentFarm.Desktop.csproj --vulnerable --include-transitive --format json 2>&1
           $report | Write-Host
-          if ($report -match '(?m)^\s*>\s+\S+') { throw "Vulnerable NuGet packages were reported." }
+          if ($LASTEXITCODE -ne 0) {
+            $escaped = (($report | Select-Object -Last 80) -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=NuGet dependency audit::$escaped"
+            exit $LASTEXITCODE
+          }
+          if (($report -join "`n") -match '"vulnerabilities"\s*:') { throw "Vulnerable NuGet packages were reported." }
 
   secrets:
     name: Secret scan
