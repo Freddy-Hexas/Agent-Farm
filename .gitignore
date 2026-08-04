@@ -17,3 +17,6 @@ artifacts/
 *.egg-info/
 **/bin/
 **/obj/
+
+# Local developer progress tracking; keep implementation ledgers out of releases.
+docs/PRODUCT_MATURITY_CHECKLIST.md
