@@ -28,6 +28,8 @@ class ContinuousIntegrationConfigurationTests(unittest.TestCase):
         self.assertNotIn("windows-latest", workflow)
         self.assertIn("actions/upload-artifact@v7", workflow)
         self.assertIn("if: always()", workflow)
+        native_ui_script = (ROOT / "scripts" / "test_native_ui.ps1").read_text(encoding="utf-8")
+        self.assertIn("::error title=", native_ui_script)
 
     def test_optional_local_winui_analyzer_does_not_break_clean_build_hosts(self) -> None:
         props = (ROOT / "AgentFarm.Desktop" / "Directory.Build.props").read_text(encoding="utf-8")

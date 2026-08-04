@@ -197,6 +197,11 @@ winapp ui screenshot -a $AppPid -o (Join-Path $artifactRoot "providers.png") 2>$
 Write-Host "Passed: $pass | Failed: $fail"
 $results | Where-Object { $_.status -eq "FAIL" } | ForEach-Object {
     Write-Host "  FAIL: $($_.name) - $($_.detail)" -ForegroundColor Red
+    if ($env:GITHUB_ACTIONS -eq "true") {
+        $title = "Native UI: $($_.name)".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+        $detail = "$($_.detail)".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+        Write-Output "::error title=$title::$detail"
+    }
 }
 $results | ConvertTo-Json -Depth 4 | Out-File -Encoding utf8 (Join-Path $artifactRoot "results.json")
 if ($fail -gt 0) { exit 1 }

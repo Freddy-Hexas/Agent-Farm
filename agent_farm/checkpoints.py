@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +55,7 @@ class CheckpointStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.retention = max(1, retention)
         self._lock = threading.RLock()
+        self._last_created_order = 0
 
     def _dir(self, checkpoint_id: str) -> Path:
         if not checkpoint_id.startswith("checkpoint-") or any(
@@ -88,6 +90,8 @@ class CheckpointStore:
         directory = self._dir(checkpoint_id)
         before_root = directory / "before"
         with self._lock:
+            created_order = max(time.time_ns(), self._last_created_order + 1)
+            self._last_created_order = created_order
             directory.mkdir(parents=True, exist_ok=False)
             entries: list[dict[str, Any]] = []
             for relative in normalized:
@@ -109,6 +113,7 @@ class CheckpointStore:
                 "base_commit": base_commit,
                 "patch_file": str(patch_file.resolve()),
                 "created_at": _utc_now(),
+                "created_order": created_order,
                 "updated_at": _utc_now(),
                 "entries": entries,
                 "verification": None,
@@ -135,7 +140,11 @@ class CheckpointStore:
                     checkpoints.append(checkpoint)
             return sorted(
                 checkpoints,
-                key=lambda item: str(item.get("created_at") or ""),
+                key=lambda item: (
+                    str(item.get("created_at") or ""),
+                    int(item.get("created_order") or 0),
+                    str(item.get("checkpoint_id") or ""),
+                ),
                 reverse=True,
             )
 

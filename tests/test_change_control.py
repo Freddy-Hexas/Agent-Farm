@@ -184,22 +184,29 @@ class ChangeControlTests(unittest.TestCase):
                 root / ".agent-farm" / "checkpoints",
                 retention=1,
             )
-            first = checkpoints.create(
-                farm_id="farm-one",
-                worker_id="one",
-                affected_paths=["app.txt"],
-                patch_file=patch_file,
-                base_commit="base",
-            )
-            checkpoints.create(
-                farm_id="farm-two",
-                worker_id="two",
-                affected_paths=["app.txt"],
-                patch_file=patch_file,
-                base_commit="base",
-            )
+            with patch(
+                "agent_farm.checkpoints._utc_now",
+                return_value="2026-08-04T00:00:00+00:00",
+            ):
+                first = checkpoints.create(
+                    farm_id="farm-one",
+                    worker_id="one",
+                    affected_paths=["app.txt"],
+                    patch_file=patch_file,
+                    base_commit="base",
+                )
+                second = checkpoints.create(
+                    farm_id="farm-two",
+                    worker_id="two",
+                    affected_paths=["app.txt"],
+                    patch_file=patch_file,
+                    base_commit="base",
+                )
             self.assertFalse(
                 (root / ".agent-farm" / "checkpoints" / first["checkpoint_id"]).exists()
+            )
+            self.assertTrue(
+                (root / ".agent-farm" / "checkpoints" / second["checkpoint_id"]).exists()
             )
 
 
