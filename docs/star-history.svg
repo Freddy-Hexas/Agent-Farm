@@ -30,9 +30,9 @@
   <text x="918" y="43" class="count" text-anchor="end">★ 0</text>
   <text x="918" y="65" class="count-label" text-anchor="end">CURRENT STARS</text>
   <line x1="76" y1="406.00" x2="918" y2="406.00" class="grid" /><text x="62" y="411.00" class="axis" text-anchor="end">0</text><line x1="76" y1="330.50" x2="918" y2="330.50" class="grid" /><text x="62" y="335.50" class="axis" text-anchor="end">1</text><line x1="76" y1="255.00" x2="918" y2="255.00" class="grid" /><text x="62" y="260.00" class="axis" text-anchor="end">2</text><line x1="76" y1="179.50" x2="918" y2="179.50" class="grid" /><text x="62" y="184.50" class="axis" text-anchor="end">3</text><line x1="76" y1="104.00" x2="918" y2="104.00" class="grid" /><text x="62" y="109.00" class="axis" text-anchor="end">4</text>
-  <path d="M 76.00 406.00 L 76.00 406.00 L 244.40 406.00 L 412.80 406.00 L 581.20 406.00 L 749.60 406.00 L 918.00 406.00 L 918.00 406.00 Z" fill="url(#area)" />
-  <path d="M 76.00 406.00 L 244.40 406.00 L 412.80 406.00 L 581.20 406.00 L 749.60 406.00 L 918.00 406.00" fill="none" stroke="#58a6ff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" />
+  <path d="M 76.00 406.00 L 76.00 406.00 L 216.33 406.00 L 356.67 406.00 L 497.00 406.00 L 637.33 406.00 L 777.67 406.00 L 918.00 406.00 L 918.00 406.00 Z" fill="url(#area)" />
+  <path d="M 76.00 406.00 L 216.33 406.00 L 356.67 406.00 L 497.00 406.00 L 637.33 406.00 L 777.67 406.00 L 918.00 406.00" fill="none" stroke="#58a6ff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" />
   <circle cx="918.00" cy="406.00" r="5" fill="#0d1117" stroke="#79c0ff" stroke-width="3" />
-  <text x="76" y="440" class="axis" text-anchor="start">2026-07-31</text><text x="918" y="440" class="axis" text-anchor="end">2026-08-05</text>
+  <text x="76" y="440" class="axis" text-anchor="start">2026-07-31</text><text x="918" y="440" class="axis" text-anchor="end">2026-08-06</text>
   <text x="480.0" y="456" class="subtitle" text-anchor="middle">Daily aggregate counts · no Stargazer identities are collected</text>
 </svg>
