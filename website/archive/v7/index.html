@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Agent Farm is a native Windows control plane that keeps premium models focused on judgment while economical and local Workers handle bounded execution."
+    />
+    <meta name="theme-color" content="#050607" />
+    <meta property="og:title" content="Agent Farm — Multi-model execution under control" />
+    <meta
+      property="og:description"
+      content="Use your best model for judgment. Route bounded work to economical and local models."
+    />
+    <meta property="og:type" content="website" />
+    <title>Agent Farm — Multi-model execution under control</title>
+    <link rel="icon" type="image/png" href="./assets/agent-farm-brand/agent-farm-512x512.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;650;700&family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="#product" aria-label="Agent Farm home">
+        <img
+          src="./assets/agent-farm-brand/agent-farm-512x512.png"
+          alt=""
+          width="36"
+          height="36"
+        />
+        <span>Agent Farm</span>
+      </a>
+
+      <nav class="site-nav" id="primary-nav" aria-label="Primary navigation">
+        <a href="#product">Product</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#controls">Controls</a>
+        <a href="#architecture">Architecture</a>
+      </nav>
+
+      <div class="header-side">
+        <span>WINDOWS / LOCAL-FIRST</span>
+        <a class="header-link" href="#architecture">View system</a>
+      </div>
+
+      <button
+        class="menu-toggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="primary-nav"
+        aria-label="Open navigation"
+      >
+        <span></span>
+        <span></span>
+      </button>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="product" aria-labelledby="hero-title">
+        <div class="hero-mesh" aria-hidden="true"></div>
+
+        <div class="hero-copy reveal">
+          <div class="hero-kicker">
+            <span>AI DEVELOPER INFRASTRUCTURE</span>
+            <i></i>
+            <span>NATIVE WINDOWS CONTROL PLANE</span>
+          </div>
+
+          <h1 id="hero-title">
+            Spend premium tokens<br />
+            on <em>judgment.</em><br />
+            <span>Route the rest.</span>
+          </h1>
+
+          <p>
+            Agent Farm separates high-capability planning and review from bounded execution—then
+            makes every route, budget, tool action, and result visible.
+          </p>
+
+          <div class="hero-actions">
+            <a class="primary-action" href="#workflow">See how it works <span>↘</span></a>
+            <a class="text-action" href="#controls">Explore the control plane</a>
+          </div>
+        </div>
+
+        <aside class="hero-system reveal" aria-label="Agent Farm model separation overview">
+          <div class="system-bar">
+            <span>ROUTING POLICY</span>
+            <strong><i></i> EXPLICIT / ACTIVE</strong>
+          </div>
+
+          <div class="system-body">
+            <div class="system-role supervisor-role">
+              <span>JUDGMENT LAYER</span>
+              <strong>SUPERVISOR</strong>
+              <small>understand · plan · review · decide</small>
+            </div>
+
+            <div class="capability-boundary" aria-hidden="true">
+              <span>CAPABILITY BOUNDARY</span>
+              <i></i>
+            </div>
+
+            <div class="worker-routes">
+              <div class="worker-route">
+                <span>W1</span>
+                <strong>INSPECT</strong>
+                <small>economical</small>
+                <i></i>
+              </div>
+              <div class="worker-route">
+                <span>W2</span>
+                <strong>BUILD</strong>
+                <small>isolated</small>
+                <i></i>
+              </div>
+              <div class="worker-route">
+                <span>W3</span>
+                <strong>TEST</strong>
+                <small>bounded</small>
+                <i></i>
+              </div>
+            </div>
+
+            <div class="evidence-return">
+              <span>EVIDENCE RETURN</span>
+              <strong>PATCHES · TESTS · USAGE · FINDINGS</strong>
+            </div>
+          </div>
+
+          <div class="system-footer">
+            <span>ROUTES / NAMED</span>
+            <span>BUDGETS / ENFORCED</span>
+            <span>DECISIONS / RECORDED</span>
+          </div>
+        </aside>
+
+        <div class="hero-ledger reveal" aria-label="Core Agent Farm properties">
+          <div>
+            <span>01 / JUDGMENT</span>
+            <strong>High-capability Supervisor</strong>
+          </div>
+          <div>
+            <span>02 / EXECUTION</span>
+            <strong>Economical or local Workers</strong>
+          </div>
+          <div>
+            <span>03 / ISOLATION</span>
+            <strong>One worktree per Worker</strong>
+          </div>
+          <div>
+            <span>04 / CONTROL</span>
+            <strong>Evidence before acceptance</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="statement-strip" aria-label="Agent Farm operating principle">
+        <p class="reveal">Judgment is scarce.</p>
+        <span>ONE ACCOUNTABLE SUPERVISOR</span>
+        <p class="reveal">Execution is scalable.</p>
+      </section>
+
+      <section class="problem-section" aria-labelledby="problem-title">
+        <div class="problem-lead reveal">
+          <h2 id="problem-title">Capability is expensive. Mechanical work is not.</h2>
+          <p>
+            One premium model can do the whole job, but it spends its most expensive tokens listing,
+            searching, reading, running, and drafting. Agent Farm keeps that capability at the
+            decision boundary.
+          </p>
+        </div>
+
+        <div class="comparison-ledger reveal" role="table" aria-label="Routing model comparison">
+          <div class="comparison-head" role="row">
+            <span role="columnheader">WORKLOAD</span>
+            <span role="columnheader">ONE-MODEL RUN</span>
+            <span role="columnheader">AGENT FARM</span>
+          </div>
+          <div role="row">
+            <strong role="cell">Intent + decomposition</strong>
+            <span role="cell">Premium model</span>
+            <span role="cell" class="signal">Supervisor</span>
+          </div>
+          <div role="row">
+            <strong role="cell">Search + inspection</strong>
+            <span role="cell">Premium model</span>
+            <span role="cell" class="signal">Economical Worker</span>
+          </div>
+          <div role="row">
+            <strong role="cell">Editing + tests</strong>
+            <span role="cell">Premium model</span>
+            <span role="cell" class="signal">Bounded Worker</span>
+          </div>
+          <div role="row">
+            <strong role="cell">Review + final decision</strong>
+            <span role="cell">Premium model</span>
+            <span role="cell" class="signal">Supervisor</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="economics-section" id="economics" aria-labelledby="economics-title">
+        <div class="economics-heading reveal">
+          <div>
+            <span>ILLUSTRATIVE ROUTING ECONOMICS / NORMALIZED INDEX</span>
+            <h2 id="economics-title">Route capability where it compounds.</h2>
+          </div>
+          <p>
+            Keep the strongest model at the judgment boundary. Route bounded execution to fast,
+            economical Workers that can run concurrently and return evidence for review.
+          </p>
+        </div>
+
+        <div class="economics-chart reveal" id="economics-chart">
+          <div class="economics-topline">
+            <span><i aria-hidden="true"></i> ROUTING SCENARIO / 01</span>
+            <strong>ILLUSTRATIVE — NOT A MEASURED BENCHMARK</strong>
+            <span>BASELINE = 100</span>
+          </div>
+
+          <div class="economics-plots">
+            <article class="metric-plot metric-cost" aria-labelledby="cost-index-title">
+              <div class="metric-heading">
+                <div>
+                  <span>01 / TOKEN COST</span>
+                  <h3 id="cost-index-title">Cost index</h3>
+                  <small>LOWER IS BETTER</small>
+                </div>
+                <p><span>UP TO</span><strong>50%</strong><em>LOWER*</em></p>
+              </div>
+
+              <div class="bar-stage" role="img" aria-label="Illustrative normalized cost index: single-model route 100, Agent Farm route 50">
+                <div class="chart-scale" aria-hidden="true">
+                  <span>100</span><span>75</span><span>50</span><span>25</span><span>0</span>
+                </div>
+                <div class="bar-column bar-baseline">
+                  <div class="bar-rail" style="--bar-height: 100%; --bar-delay: 80ms">
+                    <div class="bar-fill"><span class="bar-value">100</span></div>
+                  </div>
+                  <div class="bar-label"><strong>SINGLE MODEL</strong><span>PREMIUM FOR EVERY TOKEN</span></div>
+                </div>
+                <div class="bar-column bar-farm">
+                  <div class="bar-rail" style="--bar-height: 50%; --bar-delay: 230ms">
+                    <div class="bar-fill"><span class="bar-value">50</span></div>
+                  </div>
+                  <div class="bar-label"><strong>AGENT FARM</strong><span>ROUTED BY TASK VALUE</span></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="metric-plot metric-speed" aria-labelledby="speed-index-title">
+              <div class="metric-heading">
+                <div>
+                  <span>02 / EXECUTION SPEED</span>
+                  <h3 id="speed-index-title">Speed index</h3>
+                  <small>HIGHER IS BETTER</small>
+                </div>
+                <p><span>UP TO</span><strong>10%</strong><em>HIGHER*</em></p>
+              </div>
+
+              <div class="bar-stage" role="img" aria-label="Illustrative normalized execution speed index: single-model route 100, Agent Farm route 110">
+                <div class="chart-scale" aria-hidden="true">
+                  <span>110</span><span>82</span><span>55</span><span>27</span><span>0</span>
+                </div>
+                <div class="bar-column bar-baseline">
+                  <div class="bar-rail" style="--bar-height: 91%; --bar-delay: 130ms">
+                    <div class="bar-fill"><span class="bar-value">100</span></div>
+                  </div>
+                  <div class="bar-label"><strong>SINGLE MODEL</strong><span>SERIAL EXECUTION</span></div>
+                </div>
+                <div class="bar-column bar-farm">
+                  <div class="bar-rail" style="--bar-height: 100%; --bar-delay: 280ms">
+                    <div class="bar-fill"><span class="bar-value">110</span></div>
+                  </div>
+                  <div class="bar-label"><strong>AGENT FARM</strong><span>BOUNDED CONCURRENCY</span></div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="routing-roster" aria-label="Illustrative model routing configuration">
+            <div class="roster-baseline">
+              <span>TRADITIONAL / ONE ROUTE</span>
+              <strong>GPT-5.6-SOL</strong>
+              <small>PLAN · SEARCH · BUILD · TEST · REVIEW</small>
+            </div>
+            <div class="roster-transfer" aria-hidden="true">
+              <span></span><i></i><span></span>
+            </div>
+            <div class="roster-farm">
+              <div>
+                <span>SUPERVISOR / JUDGMENT</span>
+                <strong>GPT-5.6-SOL</strong>
+              </div>
+              <ul>
+                <li><i></i>DEEPSEEK-V4-FLASH</li>
+                <li><i></i>KIMI K3</li>
+                <li><i></i>QWEN3-14B</li>
+              </ul>
+            </div>
+          </div>
+
+          <p class="economics-disclosure">
+            * Illustrative normalized scenario with the single-model route set to 100. Not a measured
+            benchmark. Actual cost and runtime vary by workload, provider pricing, model availability,
+            concurrency, tool latency, and acceptance rate.
+          </p>
+        </div>
+      </section>
+
+      <section class="workflow-section" id="workflow" aria-labelledby="workflow-title">
+        <div class="workflow-intro reveal">
+          <span>FROM INTENT TO EVIDENCE</span>
+          <h2 id="workflow-title">A complete execution loop—not a swarm of chat windows.</h2>
+          <p>
+            Every run moves through explicit planning, isolated work, observable activity, and a
+            recorded decision.
+          </p>
+        </div>
+
+        <ol class="workflow-list">
+          <li class="reveal">
+            <span>01</span>
+            <div>
+              <h3>Plan + route</h3>
+              <p>The Supervisor turns intent into bounded Worker specs with named models and budgets.</p>
+            </div>
+            <strong>SUPERVISOR</strong>
+          </li>
+          <li class="reveal">
+            <span>02</span>
+            <div>
+              <h3>Isolate + execute</h3>
+              <p>Each Worker receives its own worktree, allowed paths, tools, and execution boundary.</p>
+            </div>
+            <strong>WORKERS</strong>
+          </li>
+          <li class="reveal">
+            <span>03</span>
+            <div>
+              <h3>Stream + collect</h3>
+              <p>Model output, tool activity, approvals, usage, patches, and tests arrive as ordered events.</p>
+            </div>
+            <strong>RUNTIME</strong>
+          </li>
+          <li class="reveal">
+            <span>04</span>
+            <div>
+              <h3>Review + decide</h3>
+              <p>Machine gates reject unsafe results before the Supervisor accepts, revises, or rejects.</p>
+            </div>
+            <strong>EVIDENCE</strong>
+          </li>
+        </ol>
+      </section>
+
+      <section class="architecture-section" id="architecture" aria-labelledby="architecture-title">
+        <div class="architecture-heading reveal">
+          <div>
+            <span>ARCHITECTURE</span>
+            <h2 id="architecture-title">Model separation, made visible.</h2>
+          </div>
+          <p>
+            A Worker never silently inherits the Supervisor model. Provider, capability tier,
+            reasoning mode, and budget remain explicit through the full route.
+          </p>
+        </div>
+
+        <div class="architecture-stage reveal" data-phase="0">
+          <div class="architecture-statusbar">
+            <span>REFERENCE FLOW</span>
+            <strong id="architecture-status">INTENT READY</strong>
+            <span>AUTONOMOUS LOOP / 01—05</span>
+          </div>
+
+          <div class="phase-display">
+            <span id="phase-number">01</span>
+            <h3 id="phase-title">Intent enters.</h3>
+            <p id="phase-copy">A single outcome arrives with boundaries attached.</p>
+          </div>
+
+          <div
+            class="branch-scene"
+            id="branch-scene"
+            aria-label="Three-dimensional branching Agent Farm routing architecture"
+          >
+            <div class="branch-floor" aria-hidden="true"></div>
+
+            <div class="branch-world">
+              <svg
+                class="branch-network branch-network-desktop"
+                viewBox="0 0 1200 620"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path class="branch-path route-intent" d="M105 310 C175 310 235 310 330 310" />
+                <path class="branch-path route-worker" d="M330 310 C430 300 465 110 620 110" />
+                <path class="branch-path route-worker" d="M330 310 C455 310 545 310 684 310" />
+                <path class="branch-path route-worker" d="M330 310 C430 320 465 510 620 510" />
+                <path class="branch-path route-merge" d="M620 110 C800 120 805 275 948 310" />
+                <path class="branch-path route-merge" d="M684 310 C780 310 850 310 948 310" />
+                <path class="branch-path route-merge" d="M620 510 C800 500 805 345 948 310" />
+                <path class="branch-path route-decision" d="M948 310 C1015 310 1060 310 1110 310" />
+
+                <path class="branch-packet packet-intent" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.45s" repeatCount="indefinite" path="M105 310 C175 310 235 310 330 310" />
+                </path>
+                <path class="branch-packet packet-worker packet-worker-a" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.8s" repeatCount="indefinite" path="M330 310 C430 300 465 110 620 110" />
+                </path>
+                <path class="branch-packet packet-worker packet-worker-b" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-.55s" dur="1.8s" repeatCount="indefinite" path="M330 310 C455 310 545 310 684 310" />
+                </path>
+                <path class="branch-packet packet-worker packet-worker-c" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-1.1s" dur="1.8s" repeatCount="indefinite" path="M330 310 C430 320 465 510 620 510" />
+                </path>
+                <path class="branch-packet packet-merge packet-merge-a" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.7s" repeatCount="indefinite" path="M620 110 C800 120 805 275 948 310" />
+                </path>
+                <path class="branch-packet packet-merge packet-merge-b" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-.5s" dur="1.7s" repeatCount="indefinite" path="M684 310 C780 310 850 310 948 310" />
+                </path>
+                <path class="branch-packet packet-merge packet-merge-c" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-1s" dur="1.7s" repeatCount="indefinite" path="M620 510 C800 500 805 345 948 310" />
+                </path>
+                <path class="branch-packet packet-decision" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.35s" repeatCount="indefinite" path="M948 310 C1015 310 1060 310 1110 310" />
+                </path>
+              </svg>
+
+              <svg
+                class="branch-network branch-network-mobile"
+                viewBox="0 0 360 720"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path class="branch-path route-intent" d="M180 55 C180 105 180 140 180 185" />
+                <path class="branch-path route-worker" d="M180 185 C180 255 55 275 55 350" />
+                <path class="branch-path route-worker" d="M180 185 C180 250 180 290 180 350" />
+                <path class="branch-path route-worker" d="M180 185 C180 255 305 275 305 350" />
+                <path class="branch-path route-merge" d="M55 350 C55 440 180 455 180 535" />
+                <path class="branch-path route-merge" d="M180 350 C180 420 180 465 180 535" />
+                <path class="branch-path route-merge" d="M305 350 C305 440 180 455 180 535" />
+                <path class="branch-path route-decision" d="M180 535 C180 585 180 620 180 665" />
+
+                <path class="branch-packet packet-intent" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.45s" repeatCount="indefinite" path="M180 55 C180 105 180 140 180 185" />
+                </path>
+                <path class="branch-packet packet-worker packet-worker-a" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.8s" repeatCount="indefinite" path="M180 185 C180 255 55 275 55 350" />
+                </path>
+                <path class="branch-packet packet-worker packet-worker-b" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-.55s" dur="1.8s" repeatCount="indefinite" path="M180 185 C180 250 180 290 180 350" />
+                </path>
+                <path class="branch-packet packet-worker packet-worker-c" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-1.1s" dur="1.8s" repeatCount="indefinite" path="M180 185 C180 255 305 275 305 350" />
+                </path>
+                <path class="branch-packet packet-merge packet-merge-a" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.7s" repeatCount="indefinite" path="M55 350 C55 440 180 455 180 535" />
+                </path>
+                <path class="branch-packet packet-merge packet-merge-b" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-.5s" dur="1.7s" repeatCount="indefinite" path="M180 350 C180 420 180 465 180 535" />
+                </path>
+                <path class="branch-packet packet-merge packet-merge-c" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" begin="-1s" dur="1.7s" repeatCount="indefinite" path="M305 350 C305 440 180 455 180 535" />
+                </path>
+                <path class="branch-packet packet-decision" d="M-7 -5 L5 0 L-7 5 Z">
+                  <animateMotion rotate="auto" dur="1.35s" repeatCount="indefinite" path="M180 535 C180 585 180 620 180 665" />
+                </path>
+              </svg>
+
+              <div class="branch-node node-intent" data-node="0">
+                <span>01 / INPUT</span>
+                <strong>INTENT</strong>
+                <small>Bounded outcome</small>
+              </div>
+              <div class="branch-node node-supervisor" data-node="1">
+                <span>02 / JUDGMENT</span>
+                <strong>SUPERVISOR</strong>
+                <small>Plan + acceptance</small>
+              </div>
+              <div class="branch-node branch-worker worker-search" data-node="2">
+                <span>W1</span>
+                <strong>SEARCH</strong>
+                <small>Economical route</small>
+              </div>
+              <div class="branch-node branch-worker worker-build" data-node="2">
+                <span>W2</span>
+                <strong>BUILD</strong>
+                <small>Isolated worktree</small>
+              </div>
+              <div class="branch-node branch-worker worker-test" data-node="2">
+                <span>W3</span>
+                <strong>TEST</strong>
+                <small>Bounded check</small>
+              </div>
+              <div class="branch-node node-evidence" data-node="3">
+                <span>04 / MERGE</span>
+                <strong>EVIDENCE</strong>
+                <small>Patch + tests + scope</small>
+              </div>
+              <div class="branch-node node-decision" data-node="4">
+                <span>05 / JUDGMENT</span>
+                <strong>DECIDE</strong>
+                <small>Accept / revise / reject</small>
+              </div>
+            </div>
+
+            <div class="branch-legend" aria-hidden="true">
+              <span><i></i>ACTIVE ROUTE</span>
+              <span>POINTER-REACTIVE DEPTH</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="architecture-note reveal">
+          Reference visualization. Actual runs additionally record provider, model, reasoning mode,
+          latency, retries, token usage, approvals, and cost for each request.
+        </p>
+      </section>
+
+      <section class="controls-section" id="controls" aria-labelledby="controls-title">
+        <div class="controls-heading reveal">
+          <h2 id="controls-title">Autonomy stays bounded.</h2>
+          <p>
+            Agent Farm is designed for observable execution—not an unrestricted agent with silent
+            access to your machine.
+          </p>
+        </div>
+
+        <div class="control-ledger" role="list">
+          <article class="reveal" role="listitem">
+            <span>01</span>
+            <h3>Cost-aware routing</h3>
+            <p>Supervisor and Worker usage stays separate, with budgets, price rules, and escalation policies.</p>
+            <strong>ENFORCED</strong>
+          </article>
+          <article class="reveal" role="listitem">
+            <span>02</span>
+            <h3>Bounded execution</h3>
+            <p>Worktrees, path rules, sandbox limits, and durable approvals contain each Worker.</p>
+            <strong>SCOPED</strong>
+          </article>
+          <article class="reveal" role="listitem">
+            <span>03</span>
+            <h3>Reviewable evidence</h3>
+            <p>Files, diffs, commands, tests, usage, failures, and decisions remain visible as typed history.</p>
+            <strong>RECORDED</strong>
+          </article>
+          <article class="reveal" role="listitem">
+            <span>04</span>
+            <h3>Reversible changes</h3>
+            <p>Approved apply and merge operations create checkpoints before changing the main workspace.</p>
+            <strong>REVERSIBLE</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="use-cases" aria-labelledby="use-cases-title">
+        <div class="use-cases-intro reveal">
+          <span>REAL WORKLOADS</span>
+          <h2 id="use-cases-title">Separation where it matters.</h2>
+          <p>One control plane supports code, research, and mixed-model operations without hiding the route.</p>
+        </div>
+
+        <div class="use-case-list">
+          <article class="reveal">
+            <span>01 / REPOSITORIES</span>
+            <h3>Changes without agent collisions.</h3>
+            <p>Map behavior, implement, and test in parallel worktrees—then review one evidence package.</p>
+            <div><i>ISOLATED WORKTREES</i><i>PATCH REVIEW</i><i>ROLLBACK</i></div>
+          </article>
+          <article class="reveal">
+            <span>02 / RESEARCH</span>
+            <h3>Parallel investigation, one synthesis.</h3>
+            <p>Split collection, analysis, and source audit while the Supervisor owns the final deliverable.</p>
+            <div><i>TOOL BUDGETS</i><i>ARTIFACTS</i><i>EVIDENCE</i></div>
+          </article>
+          <article class="reveal">
+            <span>03 / MODEL STACKS</span>
+            <h3>Hosted capability. Local repetition.</h3>
+            <p>Mix premium providers, economical APIs, Ollama, and LM Studio through explicit named routes.</p>
+            <div><i>MULTI-PROVIDER</i><i>LOCAL MODELS</i><i>COST LEDGER</i></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="closing" aria-labelledby="closing-title">
+        <div class="closing-brand reveal">
+          <img
+            src="./assets/agent-farm-brand/agent-farm-512x512.png"
+            alt=""
+            width="56"
+            height="56"
+          />
+          <span>AGENT FARM</span>
+        </div>
+
+        <h2 id="closing-title" class="reveal">
+          Many models.<br />
+          <em>One accountable decision.</em>
+        </h2>
+
+        <div class="closing-copy reveal">
+          <p>A native workspace for planning, running, and reviewing multi-agent work across models and providers.</p>
+          <a href="#product">Return to product overview <span>↑</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <img
+          src="./assets/agent-farm-brand/agent-farm-512x512.png"
+          alt=""
+          width="28"
+          height="28"
+        />
+        <span>Agent Farm</span>
+      </div>
+      <nav aria-label="Footer navigation">
+        <a href="#product">Product</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#controls">Controls</a>
+        <a href="#architecture">Architecture</a>
+      </nav>
+      <div class="footer-meta">
+        <span>VERSION 0.5.0.9</span>
+        <span>WINDOWS X64</span>
+        <span>MIT</span>
+      </div>
+    </footer>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>

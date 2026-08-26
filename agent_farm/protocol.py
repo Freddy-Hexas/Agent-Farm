@@ -14,7 +14,11 @@ SERVER_CAPABILITIES = frozenset(
         "durable-jobs.v1",
         "model-deltas.v1",
         "reconnect-cursor.v1",
+        "sessions.v1",
+        "subagents.v1",
+        "tasks.v1",
         "typed-messages.v1",
+        "harness-registry.v1",
     }
 )
 
@@ -52,6 +56,13 @@ class WorkerMessage(TypedDict):
     status: str
     provider: NotRequired[str]
     model: NotRequired[str]
+    provider_id: NotRequired[str]
+    model_id: NotRequired[str]
+    harness_id: NotRequired[str]
+    route_id: NotRequired[str]
+    session_id: NotRequired[str]
+    parent_session_id: NotRequired[str]
+    stop_reason: NotRequired[str]
 
 
 class ToolMessage(TypedDict):
@@ -149,6 +160,13 @@ MESSAGE_SCHEMAS: dict[str, dict[str, Any]] = {
             "status": {"type": "string"},
             "provider": {"type": "string"},
             "model": {"type": "string"},
+            "provider_id": {"type": "string"},
+            "model_id": {"type": "string"},
+            "harness_id": {"type": "string"},
+            "route_id": {"type": "string"},
+            "session_id": {"type": "string"},
+            "parent_session_id": {"type": "string"},
+            "stop_reason": {"type": "string"},
         },
     ),
     "tool": _object_schema(

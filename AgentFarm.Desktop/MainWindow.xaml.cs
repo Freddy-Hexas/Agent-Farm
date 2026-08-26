@@ -2,12 +2,14 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Windows.UI;
+using Windows.Graphics;
 
 namespace AgentFarm_Desktop;
 
 public sealed partial class MainWindow : Window
 {
     private bool _startupStateApplied;
+    private bool _exitRequested;
 
     public MainWindow()
     {
@@ -24,6 +26,18 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += OnWindowClosing;
         RootFrame.Navigate(typeof(MainPage));
         App.WriteMarker("MainPage navigation returned");
+    }
+
+    public void ShowWindow()
+    {
+        AppWindow.Show();
+        Activate();
+    }
+
+    public void RequestExit()
+    {
+        _exitRequested = true;
+        Close();
     }
 
     private void ConfigureTitleBar()
@@ -53,15 +67,39 @@ public sealed partial class MainWindow : Window
         Activated -= OnFirstActivated;
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
-            presenter.Maximize();
+            if (IsWindowedLaunch())
+            {
+                AppWindow.Resize(new SizeInt32(LaunchDimension("AGENT_FARM_DESKTOP_WIDTH", 1440), LaunchDimension("AGENT_FARM_DESKTOP_HEIGHT", 900)));
+            }
+            else
+            {
+                presenter.Maximize();
+            }
         }
     }
 
+    private static bool IsWindowedLaunch() =>
+        string.Equals(Environment.GetEnvironmentVariable("AGENT_FARM_WINDOWED"), "1", StringComparison.Ordinal);
+
+    private static int LaunchDimension(string name, int fallback) =>
+        int.TryParse(Environment.GetEnvironmentVariable(name), out var value)
+            ? Math.Clamp(value, 1040, 10000)
+            : fallback;
+
     private void OnWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
-        if (RootFrame.Content is MainPage page)
+        if (_exitRequested)
         {
-            page.StopRuntime();
+            if (RootFrame.Content is MainPage page)
+            {
+                page.StopRuntime();
+            }
+            return;
         }
+
+        // Keep the daemon and its in-flight work alive when the user dismisses the window.
+        args.Cancel = true;
+        sender.Hide();
+        App.WriteMarker("MainWindow hidden; background runtime remains active");
     }
 }

@@ -175,6 +175,12 @@ internal sealed class AgentRuntimeProcess : IDisposable
 
         startInfo.ArgumentList.Add("--repo");
         startInfo.ArgumentList.Add(repositoryRoot);
+        var configuredPath = Environment.GetEnvironmentVariable("AGENT_FARM_CONFIG");
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            startInfo.ArgumentList.Add("--config");
+            startInfo.ArgumentList.Add(Path.GetFullPath(configuredPath));
+        }
         startInfo.ArgumentList.Add("--daemon");
         startInfo.Environment["PYTHONUNBUFFERED"] = "1";
         startInfo.Environment["AGENT_FARM_RUNTIME_FINGERPRINT"] = ExpectedRuntimeFingerprint();

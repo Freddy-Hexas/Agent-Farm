@@ -13,6 +13,7 @@ from agent_farm.desktop import (
     _enforce_initial_window_state,
     _maximize_to_work_area,
     discover_default_repo,
+    run_desktop,
 )
 from unittest.mock import patch
 
@@ -22,6 +23,44 @@ def git(repo: Path, *args: str) -> None:
 
 
 class DesktopRuntimeTests(unittest.TestCase):
+    def test_desktop_launcher_targets_the_native_winui_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git(root, "init")
+            project = root / "AgentFarm.Desktop" / "AgentFarm.Desktop.csproj"
+            project.parent.mkdir()
+            project.write_text("<Project />\n", encoding="utf-8")
+            config = root / "agent-farm.local.json"
+
+            with (
+                patch("agent_farm.desktop.sys.platform", "win32"),
+                patch("agent_farm.desktop.find_repo_root", return_value=root),
+                patch("agent_farm.desktop.shutil.which", return_value="dotnet"),
+                patch(
+                    "agent_farm.desktop.subprocess.run",
+                    return_value=SimpleNamespace(returncode=0),
+                ) as run,
+            ):
+                run_desktop(
+                    repo=root,
+                    config_path=config,
+                    width=1600,
+                    height=1000,
+                    maximized=False,
+                    debug=True,
+                )
+
+            command = run.call_args.args[0]
+            environment = run.call_args.kwargs["env"]
+            self.assertEqual(command[0], "dotnet")
+            self.assertIn("AgentFarm.Desktop.csproj", command[3])
+            self.assertIn("--configuration", command)
+            self.assertEqual(environment["AGENT_FARM_NATIVE_DESKTOP"], "1")
+            self.assertEqual(environment["AGENT_FARM_WINDOWED"], "1")
+            self.assertEqual(environment["AGENT_FARM_DESKTOP_WIDTH"], "1600")
+            self.assertEqual(environment["AGENT_FARM_DESKTOP_HEIGHT"], "1000")
+            self.assertEqual(environment["AGENT_FARM_CONFIG"], str(config.resolve()))
+
     def test_startup_reapplies_maximize_after_native_gui_starts(self):
         class FakeWindow:
             def __init__(self):

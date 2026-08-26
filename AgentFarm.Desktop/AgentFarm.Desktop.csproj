@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>AgentFarm_Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -11,6 +12,7 @@
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <EnableMsixTooling>true</EnableMsixTooling>
+    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <WindowsAppSDKSelfContained Condition="'$(Configuration)' == 'Release'">true</WindowsAppSDKSelfContained>
@@ -55,7 +57,8 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.251219" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
+    <!-- 1.8 matches the installed Windows App Runtime and the supported WinUI 3 desktop toolchain. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.5.0" />
   </ItemGroup>

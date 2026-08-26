@@ -25,6 +25,59 @@ def git(repo: Path, *args: str) -> None:
 
 
 class WebConsoleTests(unittest.TestCase):
+    def test_session_ledger_and_child_session_http_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            state = ConsoleState(root, None)
+            server = ConsoleHTTPServer(("127.0.0.1", 0), state, serve_assets=False)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            try:
+                thread_payload = {"title": "Ledger task"}
+                request = Request(
+                    base + "/api/threads",
+                    data=json.dumps(thread_payload).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=2) as response:
+                    thread_json = json.loads(response.read())
+                session_id = thread_json["thread_id"]
+                with urlopen(base + f"/api/sessions/{session_id}/events", timeout=2) as response:
+                    events = json.loads(response.read())
+                self.assertEqual(events["events"][0]["event_type"], "thread/started")
+
+                request = Request(
+                    base + f"/api/sessions/{session_id}/spawn",
+                    data=json.dumps(
+                        {
+                            "role": "researcher",
+                            "harness_id": "native",
+                            "provider_id": "deepseek",
+                            "model_id": "deepseek-chat",
+                            "request": "Collect evidence",
+                        }
+                    ).encode(),
+                    headers={"Content-Type": "application/json", "X-Correlation-ID": "spawn-correlation"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=2) as response:
+                    child = json.loads(response.read())
+                self.assertEqual(child["parent_session_id"], session_id)
+                child_events = state.runtime_store.session_events(child["session_id"])
+                self.assertEqual(child_events[0]["correlation_id"], "spawn-correlation")
+                with urlopen(base + f"/api/sessions/{child['session_id']}/report", timeout=2) as response:
+                    report = json.loads(response.read())
+                self.assertEqual(report["role"], "researcher")
+                self.assertNotIn("timeline", report)
+            finally:
+                server.shutdown()
+                server.server_close()
+                state.close()
+                thread.join(timeout=2)
+
     def test_http_correlation_and_diagnostic_export_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

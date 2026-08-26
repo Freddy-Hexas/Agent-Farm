@@ -4,8 +4,8 @@
   <p><strong>Use your best model for judgment. Use economical models for the work.</strong></p>
   <p>A native Windows workspace for planning, running, and reviewing multi-agent jobs across models and providers.</p>
 
-  [![Version](https://img.shields.io/badge/version-0.5.0.9-blue)](releases/v0.5.0.9)
-  [![Windows x64](https://img.shields.io/badge/Windows-x64-0078d4?logo=windows11)](releases/v0.5.0.9)
+  [![Version](https://img.shields.io/badge/version-0.5.0.13-blue)](releases/v0.5.0.13)
+  [![Windows x64](https://img.shields.io/badge/Windows-x64-0078d4?logo=windows11)](releases/v0.5.0.13)
   [![Continuous integration](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/ci.yml/badge.svg)](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/ci.yml)
   [![Security](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/security.yml/badge.svg)](https://github.com/Freddy-Hexas/Agent-Farm/actions/workflows/security.yml)
   [![License](https://img.shields.io/badge/license-MIT-16a34a)](LICENSE)
@@ -120,15 +120,22 @@ reasoning controls for:
 | Local runtimes | Ollama, LM Studio |
 | Custom endpoints | OpenAI-compatible Responses or Chat Completions APIs |
 
-Official templates attempt to load the models available to the configured account and present them
-as a list. Custom compatible endpoints keep a manual Model ID field for private gateways and proxies.
-Reasoning controls are derived from the provider and model instead of showing the same OpenAI-specific
-options everywhere.
+Official templates load the models available to the configured account and present them as a list.
+The **Custom OpenAI-compatible** template is a universal gateway route: it requests `GET /models`,
+keeps every compatible text-generation model the gateway returns (including namespaced IDs such as
+`anthropic/claude-sonnet-4.5` and `deepseek/deepseek-v4`), and keeps an exact Model ID field for
+gateways that do not expose a catalog. A gateway named or configured by the user is treated the same
+way, even when it does not have an official Agent Farm template.
+
+The route editor also exposes neutral **Thinking** and **Reasoning effort** controls for gateway
+models. Agent Farm maps these controls to the selected family where the gateway convention is known
+(for example `enable_thinking` for Qwen and `thinking.type` for Claude/DeepSeek/Kimi-style routes),
+while retaining the original model ID and allowing aliases that are not recognized in advance.
 
 ## Install the current Windows preview
 
 > [!IMPORTANT]
-> Version 0.5.0.9 is a development-signed preview. The application itself is self-contained, but the
+> Version 0.5.0.13 is a development-signed preview. The application itself is self-contained, but the
 > first installation requires trusting the included development certificate. A public one-click,
 > CA-signed installer channel is still being prepared.
 
@@ -144,13 +151,23 @@ options everywhere.
 The packaged Release build includes the .NET, Windows App SDK, and frozen Python runtime. Users do not
 need to install Python separately.
 
+### Run the source build with one click
+
+For local development, double-click [`Start-AgentFarm.cmd`](Start-AgentFarm.cmd) in the repository root.
+It opens the native WinUI Debug build in this checkout, starts the Python source daemon automatically,
+and keeps the repository selected as the initial workspace. The launcher checks Python and the .NET SDK
+before starting; no terminal command is required. Use `Start-AgentFarm.cmd --check` when you want a
+quick prerequisite check without opening the app. If Windows rejects the local WinUI AppX before the
+application can start, the launcher keeps the failure visible in the terminal so the native runtime can
+be diagnosed instead of silently switching to a different desktop implementation.
+
 ### Download and install
 
-Download these files from [`releases/v0.5.0.9`](releases/v0.5.0.9):
+Download these files from [`releases/v0.5.0.13`](releases/v0.5.0.13):
 
-- [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-Native-x64.msix)
-- [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/AgentFarm-dev.cer)
-- [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.9/SHA256SUMS.txt)
+- [`AgentFarm-Native-x64.msix`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.13/AgentFarm-Native-x64.msix)
+- [`AgentFarm-dev.cer`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.13/AgentFarm-dev.cer)
+- [`SHA256SUMS.txt`](https://github.com/Freddy-Hexas/Agent-Farm/raw/main/releases/v0.5.0.13/SHA256SUMS.txt)
 
 Import the certificate for the current user:
 
@@ -199,6 +216,31 @@ Do not modify CI or release packaging. Summarize findings and changed files in o
 8. **Synthesize** - the Supervisor compares passing evidence and produces the final deliverable or
    change decision.
 
+### Durable sessions and child agents
+
+Every Farm, Supervisor, Worker, thread, and synthesis run has a durable session identity. The daemon
+stores an append-only event ledger in `.agent-farm/runtime/runtime.sqlite3`; the desktop can replay
+from an event cursor after a restart instead of reconstructing state from browser memory. The
+compatibility job and thread endpoints remain available as projections of that ledger.
+
+The loopback API exposes the same lifecycle for integrations and future harnesses:
+
+```text
+GET  /api/sessions
+GET  /api/sessions/{id}
+GET  /api/sessions/{id}/events?after=42
+POST /api/sessions/{id}/spawn
+POST /api/sessions/{id}/cancel
+POST /api/sessions/{id}/interrupt
+POST /api/sessions/{id}/resume
+GET  /api/sessions/{id}/report
+```
+
+Child sessions carry `parent_session_id`, `harness_id`, `provider_id`, `model_id`, `route_id`, and a
+bounded permission policy. Reports expose final evidence and lifecycle counters, not the complete
+Supervisor transcript. Credential-like environment variables are removed from child environments by
+default; a provider key must be explicitly allowlisted for a child run.
+
 Inference requests are not cut off by a short HTTP client timeout. Long-thinking models can continue
 until the task is cancelled or reaches its configured execution boundary.
 
@@ -243,7 +285,8 @@ The daemon can outlive the desktop window, preserve in-flight state, and replay 
 client reconnects. Debug builds call the Python source runtime; Release builds call the frozen
 `AgentFarmBackend.exe` bundled with the application.
 
-For details, see [Architecture](docs/ARCHITECTURE.md), [Protocol](docs/PROTOCOL.md), and
+For details, see [Architecture](docs/ARCHITECTURE.md), [Harness contract](docs/HARNESSES.md),
+[Core runtime notes](docs/CORE_RUNTIME.md), [Protocol](docs/PROTOCOL.md), and
 [Desktop application](docs/DESKTOP_APP.md).
 
 ## Local configuration and credentials
@@ -319,15 +362,16 @@ agent-farm farm-run `
 agent-farm farm-review --farm .\.agent-farm\farms\<farm-id>
 ```
 
-Run `agent-farm --help` for single-Worker run, review, merge, cleanup, farm decision, local console,
-and compatibility launcher commands.
+Run `agent-farm --help` for single-Worker run, review, merge, cleanup, farm decision, and automation
+commands. `agent-farm desktop` launches the native WinUI source build; `agent-farm ui` is only a
+developer-facing legacy browser console and is not the Agent Farm product UI.
 
 ## Develop Agent Farm
 
 ### Prerequisites
 
 - Python 3.11 or newer.
-- .NET 10 SDK.
+- .NET 8 SDK or newer.
 - Windows App SDK / WinUI 3 build dependencies.
 - Microsoft WinApp CLI for packaged Debug launch and native UI automation.
 - Git.

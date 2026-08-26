@@ -185,6 +185,7 @@ WEB_TOOLS: list[dict[str, Any]] = [
 WEB_TOOL_NAMES = frozenset({"web_search", "fetch_url"})
 WEB_RESEARCH_CALL_BUDGET = 10
 WEB_RESEARCH_TURN_DEADLINE = 12
+ANALYSIS_COMPLETION_TURN_DEADLINE = 8
 WEB_RESEARCH_BUDGET_MESSAGE = (
     "The web-research budget is exhausted. Do not perform more web searches or fetches. "
     "Use the evidence already collected, write the requested artifact now, read it back "
@@ -839,9 +840,11 @@ class EventWriter:
         self,
         path: Path,
         callback: Callable[[dict[str, Any]], None] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         self.path = path
         self.callback = callback
+        self.metadata = dict(metadata or {})
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text("", encoding="utf-8")
         self.sequence = 0
@@ -850,9 +853,11 @@ class EventWriter:
         self.sequence += 1
         event = {
             "sequence": self.sequence,
+            "event_seq": self.sequence,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "type": event_type,
             **payload,
+            **self.metadata,
         }
         with self.path.open("a", encoding="utf-8", newline="\n") as stream:
             stream.write(json.dumps(event, ensure_ascii=True) + "\n")
@@ -903,6 +908,7 @@ def run_native_agent(
     cancel_check: Callable[[], bool] | None = None,
     model_attachments: list[dict[str, str]] | None = None,
     usage_context: dict[str, Any] | None = None,
+    event_metadata: dict[str, Any] | None = None,
 ) -> NativeAgentResult:
     runtime = ToolRuntime(
         worktree=worktree,
@@ -911,7 +917,7 @@ def run_native_agent(
         approval_callback=approval_callback,
         cancel_check=cancel_check,
     )
-    events = EventWriter(events_file, event_callback)
+    events = EventWriter(events_file, event_callback, event_metadata)
     legacy_reasoning = config.codex_config_overrides.get("model_reasoning_effort")
     if legacy_reasoning is not None and not isinstance(legacy_reasoning, str):
         legacy_reasoning = None
@@ -969,6 +975,9 @@ def run_native_agent(
     web_tool_calls = 0
     web_research_started = False
     web_budget_notice_sent = False
+    analysis_only = "no-change analysis: `true`" in prompt.casefold()
+    analysis_completion_notice_sent = False
+    empty_response_follow_up: str | None = None
     events.emit(
         "agent.started",
         model=model,
@@ -989,7 +998,8 @@ def run_native_agent(
                 if research_budget_exhausted
                 else tools
             )
-            turn_prompt = prompt if turn == 1 else None
+            turn_prompt = prompt if turn == 1 else empty_response_follow_up
+            empty_response_follow_up = None
             if research_budget_exhausted and not web_budget_notice_sent:
                 turn_prompt = WEB_RESEARCH_BUDGET_MESSAGE
                 web_budget_notice_sent = True
@@ -998,6 +1008,17 @@ def run_native_agent(
                     turn=turn,
                     web_tool_calls=web_tool_calls,
                 )
+            if analysis_only and turn >= min(
+                ANALYSIS_COMPLETION_TURN_DEADLINE, config.native_max_turns
+            ):
+                turn_tools = [terminal_tool]
+                turn_prompt = (
+                    "Stop exploring now. Use only the evidence already collected and call finish "
+                    "with the requested concise analysis. Do not call any more tools or make edits."
+                )
+                if not analysis_completion_notice_sent:
+                    events.emit("agent.completion_requested", turn=turn, reason="analysis_deadline")
+                    analysis_completion_notice_sent = True
             send_arguments: dict[str, Any] = {
                 "prompt": turn_prompt,
                 "tool_results": pending_results,
@@ -1092,6 +1113,13 @@ def run_native_agent(
                 if reply.text:
                     events.emit("agent.completed", turn=turn, completion="message")
                     return NativeAgentResult(True, reply.text.strip() + "\n")
+                if empty_response_follow_up is None:
+                    empty_response_follow_up = (
+                        "The previous model response was empty. Continue the task now; "
+                        "use the available tools or finish with the requested result."
+                    )
+                    events.emit("model.empty_response", turn=turn, retrying=True)
+                    continue
                 raise NativeAgentError("The model returned neither a message nor a tool call.")
         raise NativeAgentError(f"Native Agent reached the {config.native_max_turns}-turn limit.")
     except (ModelRequestCancelled, NativeAgentCancelled) as exc:
@@ -1110,6 +1138,10 @@ Never access secrets, never change files outside the allowed path set, and never
 or modify permissions. Keep changes focused. When the work is complete, call finish with an honest
 summary, the checks you ran, and any remaining risks. Do not call finish before inspecting the diff
 and running the most relevant available verification.
+
+For an explicitly marked no-change analysis Worker, do not invent an edit just to create a diff.
+Inspect the repository with read-only tools, summarize concrete findings in the finish response, and
+finish as soon as the requested evidence is complete. An empty diff is valid in that mode.
 
 For web-research tasks, avoid open-ended browsing. Use task source leads first, set a finite search
 budget, and treat inaccessible sources as evidence limitations instead of retrying indefinitely.
@@ -1130,6 +1162,7 @@ def run_native_worker(
     cancel_check: Callable[[], bool] | None = None,
     model_attachments: list[dict[str, str]] | None = None,
     usage_context: dict[str, Any] | None = None,
+    event_metadata: dict[str, Any] | None = None,
 ) -> CommandResult:
     selected_model = model or config.worker_model
     result = run_native_agent(
@@ -1151,6 +1184,7 @@ def run_native_worker(
         cancel_check=cancel_check,
         model_attachments=model_attachments,
         usage_context=usage_context,
+        event_metadata=event_metadata,
     )
     paths.worker_final_file.write_text(result.final_text, encoding="utf-8")
     paths.worker_stderr_file.write_text(result.error or "", encoding="utf-8")

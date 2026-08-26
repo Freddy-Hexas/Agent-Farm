@@ -26,6 +26,7 @@ public sealed partial class ProviderSurface : UserControl
     public ProviderEditor? SelectedProvider { get => ProviderList.SelectedItem as ProviderEditor; set => ProviderList.SelectedItem = value; }
     public int SelectedProviderIndex { get => ProviderList.SelectedIndex; set => ProviderList.SelectedIndex = value; }
     public object? EditorDataContext { get => EditorPanel.DataContext; set => EditorPanel.DataContext = value; }
+    public string ProviderId { get => ProviderIdBox.Text; set => ProviderIdBox.Text = value; }
     public string WireApi { get => WireApiCombo.SelectedItem as string ?? "chat"; set => WireApiCombo.SelectedItem = value; }
     public string ApiKey { get => ApiKeyBox.Password; set => ApiKeyBox.Password = value; }
 

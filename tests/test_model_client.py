@@ -323,11 +323,11 @@ class ModelClientTests(unittest.TestCase):
         self.assertFalse(any(event.get("delta") == "private" for event in emitted))
 
     @staticmethod
-    def _chat_route(template_id: str) -> ModelRoute:
+    def _chat_route(template_id: str, model: str = "test-model") -> ModelRoute:
         return ModelRoute(
             provider_id=template_id,
             template_id=template_id,
-            model="test-model",
+            model=model,
             base_url="https://example.com/v1",
             wire_api="chat",
             headers={},
@@ -533,6 +533,95 @@ class ModelClientTests(unittest.TestCase):
             reasoning_mode="disabled",
         )
         self.assertEqual(payload["reasoning"], {"enabled": False})
+
+    def test_custom_compatible_gateway_translates_common_model_families(self):
+        openai_payload = self._capture_chat_payload(
+            self._chat_route("custom-openai-compatible", "openai/gpt-5.5"),
+            reasoning_mode="enabled",
+            reasoning_effort="high",
+        )
+        self.assertEqual(openai_payload["reasoning_effort"], "high")
+        self.assertNotIn("thinking", openai_payload)
+
+        claude_payload = self._capture_chat_payload(
+            self._chat_route("custom-openai-compatible", "anthropic/claude-sonnet-4.5"),
+            reasoning_mode="enabled",
+            reasoning_effort="high",
+        )
+        self.assertEqual(claude_payload["thinking"], {"type": "enabled"})
+        self.assertNotIn("reasoning_effort", claude_payload)
+
+        deepseek_payload = self._capture_chat_payload(
+            self._chat_route("custom-openai-compatible", "deepseek/deepseek-v4"),
+            reasoning_mode="disabled",
+            reasoning_effort="xhigh",
+        )
+        self.assertEqual(deepseek_payload["thinking"], {"type": "disabled"})
+        self.assertEqual(deepseek_payload["reasoning_effort"], "max")
+
+        qwen_payload = self._capture_chat_payload(
+            self._chat_route("custom-openai-compatible", "qwen/qwen3-235b-a22b"),
+            reasoning_mode="enabled",
+            reasoning_effort="high",
+        )
+        self.assertIs(qwen_payload["enable_thinking"], True)
+        self.assertNotIn("reasoning_effort", qwen_payload)
+
+        kimi_payload = self._capture_chat_payload(
+            self._chat_route("custom-openai-compatible", "moonshotai/kimi-k2-thinking"),
+            reasoning_mode="enabled",
+            reasoning_effort="high",
+        )
+        self.assertEqual(kimi_payload["thinking"], {"type": "enabled"})
+        self.assertNotIn("reasoning_effort", kimi_payload)
+
+    def test_custom_compatible_responses_gateway_keeps_neutral_controls(self):
+        route = ModelRoute(
+            provider_id="custom-openai-compatible",
+            template_id="custom-openai-compatible",
+            model="openai/gpt-5.5",
+            base_url="https://example.com/v1",
+            wire_api="responses",
+            headers={},
+            extra_query={},
+            request_max_retries=0,
+        )
+        requests = []
+
+        def transport(url, headers, payload, timeout):
+            requests.append(payload)
+            return {
+                "id": "response-1",
+                "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}],
+            }
+
+        ModelSession(
+            route=route,
+            system_prompt="System",
+            timeout_seconds=None,
+            reasoning_mode="enabled",
+            reasoning_effort="high",
+            transport=transport,
+        ).send(prompt="Hello")
+
+        self.assertEqual(requests[0]["reasoning"], {"effort": "high"})
+
+    def test_unidentified_gateway_defaults_to_chat_compatibility(self):
+        route = resolve_model_route(
+            config=AgentFarmConfig(
+                model_providers={
+                    "relay": {
+                        "base_url": "https://relay.example.com/v1",
+                        "requires_openai_auth": False,
+                    }
+                }
+            ),
+            repo_root=Path.cwd(),
+            provider_id="relay",
+            model="anthropic/claude-sonnet-4.5",
+        )
+        self.assertEqual(route.template_id, "custom-openai-compatible")
+        self.assertEqual(route.wire_api, "chat")
 
 
 if __name__ == "__main__":

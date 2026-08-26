@@ -29,7 +29,7 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="270" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <ListView x:Name="ProviderList" AutomationProperties.AutomationId="ProviderList" AutomationProperties.Name="Configured providers" Height="460" ItemTemplate="{StaticResource ProviderEditorTemplate}" SelectionChanged="OnSelectionChanged" />
                 <StackPanel x:Name="EditorPanel" Grid.Column="1" Spacing="10">
-                    <TextBox x:Uid="ProviderId" AutomationProperties.AutomationId="ProviderIdBox" AutomationProperties.Name="Provider ID" Header="Provider ID" IsReadOnly="True" Text="{Binding Id, Mode=OneWay}" />
+                    <TextBox x:Name="ProviderIdBox" x:Uid="ProviderId" AutomationProperties.AutomationId="ProviderIdBox" AutomationProperties.Name="Provider ID" Header="Provider ID" MaxLength="64" Text="{Binding Id, Mode=OneWay}" />
                     <TextBox x:Uid="ProviderDisplayName" AutomationProperties.AutomationId="ProviderDisplayNameBox" AutomationProperties.Name="Provider display name" Header="Display name" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBox x:Uid="ProviderBaseUrl" AutomationProperties.AutomationId="ProviderBaseUrlBox" AutomationProperties.Name="Provider base URL" Header="Base URL" Text="{Binding BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBox x:Uid="ProviderEnvironmentKey" AutomationProperties.AutomationId="ProviderEnvironmentKeyBox" AutomationProperties.Name="API key environment variable" Header="API key environment variable" Text="{Binding EnvKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />

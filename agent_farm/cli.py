@@ -91,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ui_parser = subparsers.add_parser(
         "ui",
-        help="Open the local Agent Farm Web console.",
+        help="Open the developer-only legacy browser console (not the desktop app).",
     )
     ui_parser.add_argument("--repo", type=Path, default=Path.cwd(), help="Repository path.")
     ui_parser.add_argument("--config", type=Path, default=None, help="Config JSON path.")
@@ -115,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_parser.add_argument("--config", type=Path, default=None, help="Config JSON path.")
     desktop_parser.add_argument("--width", type=int, default=1440, help="Initial window width.")
     desktop_parser.add_argument("--height", type=int, default=900, help="Initial window height.")
-    desktop_parser.add_argument("--debug", action="store_true", help="Enable WebView developer tools.")
+    desktop_parser.add_argument("--debug", action="store_true", help="Enable native desktop diagnostics.")
 
     return parser
 

@@ -51,6 +51,14 @@ validates protocol capabilities and source fingerprint. Requests carry correlati
 events are durable, cancellation is scoped, unclean shutdowns are reconciled, and diagnostic export
 is sanitized and retention-limited.
 
+### Child-session lineage
+
+Supervisor, Farm, and Worker sessions are linked by `parent_session_id`. Child control operations
+are accepted only from the owning parent lineage or explicit local-user authority; a sibling cannot
+interrupt another Worker. Child reports expose bounded evidence instead of the full parent
+transcript. Child process environments remove credential-like variables by default, and a provider
+credential must be explicitly allowlisted for a one-shot child request.
+
 ### Updates and supply chain
 
 Production MSIX packaging requires a CA-issued certificate whose subject matches the manifest and a

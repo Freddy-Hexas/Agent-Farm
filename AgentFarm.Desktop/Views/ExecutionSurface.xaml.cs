@@ -44,9 +44,17 @@ public sealed partial class ExecutionSurface : UserControl
     public ObservableCollection<LiveAgentOutput>? LiveAgents { get => (ObservableCollection<LiveAgentOutput>?)GetValue(LiveAgentsProperty); set => SetValue(LiveAgentsProperty, value); }
     public ObservableCollection<ApprovalRequest>? PendingApprovals { get => (ObservableCollection<ApprovalRequest>?)GetValue(PendingApprovalsProperty); set => SetValue(PendingApprovalsProperty, value); }
 
-    public void ShowPlan() => SectionSelector.SelectedItem = PlanItem;
-    public void ShowLive() => SectionSelector.SelectedItem = LiveItem;
-    public void FocusPrimary() => SectionSelector.Focus(FocusState.Programmatic);
+    public void ShowPlan()
+    {
+        SetSection(live: false);
+    }
+
+    public void ShowLive()
+    {
+        SetSection(live: true);
+    }
+
+    public void FocusPrimary() => PlanItem.Focus(FocusState.Programmatic);
     public void RefreshEmptyState() => LiveEmptyState.Visibility = (_liveAgents?.Count ?? 0) == 0 && (_pendingApprovals?.Count ?? 0) == 0 ? Visibility.Visible : Visibility.Collapsed;
     public void ScrollTo(LiveAgentOutput item) => AgentsList.ScrollIntoView(item);
 
@@ -75,9 +83,18 @@ public sealed partial class ExecutionSurface : UserControl
     }
 
     private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs args) => RefreshEmptyState();
-    private void OnSectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    private void OnPlanSelected(object sender, RoutedEventArgs args)
     {
-        var live = sender.SelectedItem == LiveItem;
+        SetSection(live: false);
+    }
+
+    private void OnLiveSelected(object sender, RoutedEventArgs args)
+    {
+        SetSection(live: true);
+    }
+
+    private void SetSection(bool live)
+    {
         PlanList.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
         LivePanel.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
     }

@@ -85,10 +85,31 @@
             </Border>
             <Grid Grid.Row="2" Margin="0,0,0,8" ColumnSpacing="8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <SelectorBar x:Name="SectionSelector" AutomationProperties.AutomationId="ExecutionSelector" SelectionChanged="OnSectionChanged">
-                    <SelectorBarItem x:Name="PlanItem" x:Uid="PlanTab" AutomationProperties.AutomationId="PlanSelectorItem" IsSelected="True" Text="Plan" />
-                    <SelectorBarItem x:Name="LiveItem" x:Uid="LiveTab" AutomationProperties.AutomationId="LiveSelectorItem" Text="Live" />
-                </SelectorBar>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock
+                        x:Name="SectionSelectorLabel"
+                        AutomationProperties.AutomationId="ExecutionSelector"
+                        AutomationProperties.Name="Execution view"
+                        Margin="0,0,4,0"
+                        VerticalAlignment="Center"
+                        FontSize="{StaticResource CaptionFontSize}"
+                        Foreground="{ThemeResource MutedTextBrush}"
+                        Text="View" />
+                    <Button
+                        x:Name="PlanItem"
+                        AutomationProperties.AutomationId="PlanSelectorItem"
+                        AutomationProperties.Name="Plan view"
+                        Click="OnPlanSelected"
+                        Content="Plan"
+                        Padding="10,4" />
+                    <Button
+                        x:Name="LiveItem"
+                        AutomationProperties.AutomationId="LiveSelectorItem"
+                        AutomationProperties.Name="Live view"
+                        Click="OnLiveSelected"
+                        Content="Live"
+                        Padding="10,4" />
+                </StackPanel>
                 <TextBlock x:Name="StateLabel" Grid.Column="1" VerticalAlignment="Center" FontSize="{StaticResource CaptionFontSize}" Foreground="{ThemeResource MutedTextBrush}" Text="{x:Bind ViewModel.PlanState, Mode=OneWay}" />
             </Grid>
             <Grid Grid.Row="3">

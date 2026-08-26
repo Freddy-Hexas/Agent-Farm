@@ -32,20 +32,20 @@ Agent Farm adopts the shared information architecture without copying product br
 
 ## Desktop architecture
 
-The current codebase is Python and already owns the orchestration API. The desktop edition therefore uses `pywebview` as a lightweight native shell instead of embedding Electron and a second Node runtime.
+The product shell is a real Windows application built with .NET 8, Windows App SDK, WinUI 3, and XAML. The `AgentFarm.Desktop` project owns the window, title bar, navigation, settings, task composer, execution inspector, and review surfaces. It is the same native client shipped in the MSIX; the source launcher and the packaged release use the same project.
 
-On Windows, the window uses the installed system web renderer. A random loopback port is allocated for each process. The native window owns the HTTP server lifecycle, so closing the window also shuts down job executors and the server.
+Python owns the local orchestration runtime only. The native client starts or reconnects to the repository daemon and talks to it through a loopback HTTP + SSE protocol. No browser, WebView, HTML page, or JavaScript bundle is used to render the product UI. Closing the native window hides it while the durable daemon and active jobs keep running; launching the app again reopens the existing window when the process is still alive.
 
-The Windows shell is frameless and uses an allowlisted native bridge for minimize, maximize/restore, close, and eight-direction resizing. The title bar and window controls are rendered by Agent Farm, matching the integrated desktop chrome used by modern coding agents while preserving native window behavior.
+The Windows shell uses native title-bar integration, taskbar-safe maximization, resizable navigation and execution panes, keyboard focus, Automation IDs, and WinUI resource dictionaries. `Start-AgentFarm.cmd` and `agent-farm desktop` both launch this WinUI path. The optional `agent-farm ui` command is retained only as a developer compatibility console and is not part of the desktop product or release package.
 
 ```text
-native desktop window
-  -> system WebView
-     -> random 127.0.0.1 port
-        -> ConsoleHTTPServer
-           -> Supervisor planner
-           -> Farm runner
-           -> artifact/review store
+native WinUI 3 desktop
+  -> typed loopback HTTP + SSE
+     -> repository daemon
+        -> Supervisor planner
+        -> Farm scheduler and route registry
+        -> Worker sessions and isolated Git worktrees
+        -> artifact, review, and event stores
 ```
 
 The interaction model follows the same separation used by Codex app-server, while keeping the existing Python runtime:
@@ -62,6 +62,20 @@ desktop shell
 ```
 
 The current HTTP API is the local transport boundary. UI code does not import orchestration code or provider SDKs directly. A later transport can add JSON-RPC or WebSocket event streaming without changing the Thread / Turn / Item interaction model.
+
+## Extensibility boundary
+
+DeepSeek Harness-style extensibility belongs in the runtime, not in a browser shell. Agent Farm keeps
+the following replaceable contracts behind the native client:
+
+- harness registry: native, Codex-compatible, and future harness adapters;
+- provider and model catalog: premium Supervisor routes and economical Worker routes;
+- tool, skill, approval, sandbox, and session capabilities;
+- durable thread, event, artifact, and diagnostic records;
+- typed HTTP + SSE today, with JSONL/JSON-RPC available to future clients.
+
+The WinUI client renders those contracts as first-class native surfaces. New harnesses, providers, and
+skills therefore extend the product without replacing the desktop shell or adding a WebView.
 
 ## Codex-style desktop information architecture
 

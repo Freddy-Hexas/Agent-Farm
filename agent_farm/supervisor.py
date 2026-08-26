@@ -5,7 +5,14 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from .config import config_from_dict, load_config
+from .config import config_from_dict, load_config, resolve_worker_profile
+from .harnesses import (
+    effective_harness,
+    effective_provider,
+    event_metadata,
+    normalized_external_events,
+    require_harness,
+)
 from .native_agent import FINISH_TOOL, run_native_agent
 from .plans import SupervisorDecision, WorkerPlan
 from .specs import slugify
@@ -51,7 +58,8 @@ def synthesize_farm_deliverable(
         )
 
     config = load_config(repo_root, config_path)
-    if config.agent_backend != "native":
+    require_harness(config, "supervisor")
+    if effective_harness(config, "supervisor") != "native":
         raise SupervisorError("Collaborative synthesis currently requires the native backend.")
     synthesis_data = config.to_json()
     synthesis_data["allowed_paths"] = [plan.deliverable.path]
@@ -107,7 +115,7 @@ Requirements:
             "deliverable path. Do not modify intermediate Worker artifacts, repository code, "
             "configuration, secrets, git metadata, or permissions."
         ),
-        provider=config.supervisor_provider or config.worker_provider,
+        provider=effective_provider(config, "supervisor"),
         model=config.supervisor_model or config.worker_model,
         timeout_seconds=None,
         writable=True,
@@ -125,6 +133,14 @@ Requirements:
             "agent_kind": "supervisor",
             "phase": "synthesis",
         },
+        event_metadata=event_metadata(
+            config,
+            "supervisor",
+            provider=effective_provider(config, "supervisor"),
+            model=config.supervisor_model or config.worker_model,
+            session_id=str(review_package.get("task_id") or farm_dir.name),
+            phase="synthesis",
+        ),
     )
     if not result.ok:
         raise SupervisorError(result.error or "Native Supervisor synthesis failed.")
@@ -177,6 +193,7 @@ WORKER_PLAN_SCHEMA: dict[str, Any] = {
                     "role",
                     "profile",
                     "complexity",
+                    "allow_no_changes",
                     "attachments",
                     "depends_on",
                     "goal",
@@ -202,6 +219,7 @@ WORKER_PLAN_SCHEMA: dict[str, Any] = {
                     "test_commands": {"type": "array", "items": {"type": "string"}},
                     "acceptance": {"type": "array", "items": {"type": "string"}},
                     "context": {"type": "string"},
+                    "allow_no_changes": {"type": "boolean"},
                 },
             },
         },
@@ -243,6 +261,7 @@ def _planner_prompt(
     base_ref: str,
     worker_count: int,
     profiles: list[str],
+    profile_details: str = "",
     attachment_context: str = "",
 ) -> str:
     available = ", ".join(profiles)
@@ -270,6 +289,7 @@ Planning constraints:
 - base_ref must be exactly: {base_ref}
 - Create at most {worker_count} workers and no more than are genuinely useful.
 - Available worker profiles: {available}
+{profile_details or "- Worker profile capabilities were not separately declared; choose the cheapest suitable route."}
 - Follow the literal user request. Do not replace it with a follow-on task, UI, dashboard,
   visualization, or alternative deliverable merely because a similarly named artifact already
   exists in the repository. A pre-existing artifact is context, not authorization to change scope.
@@ -285,6 +305,10 @@ Planning constraints:
   or a narrow low-risk edit; complex means architecture, difficult debugging, security-sensitive
   work, or broad reasoning; everything else is standard. The runtime enforces the least expensive
   configured route whose capability tier meets that classification.
+- Never classify a Worker above the highest configured capability tier. If only an economy or
+  standard profile is configured, narrow the Worker scope and use that profile instead of emitting
+  an unrunnable complex Worker. Reserve `complex` for a task that genuinely requires a premium
+  route that is actually present in the profile list.
 - Assign only the exact attachment IDs a Worker needs. Use the IDs shown in attachment context;
   use an empty attachments array when the Worker does not need user files. Never broadcast every
   attachment to every Worker by default.
@@ -293,6 +317,9 @@ Planning constraints:
 - Every worker must have a narrow allowed_paths allowlist grounded in this repository.
 - For a collaborative deliverable, assign different intermediate paths to Workers and ensure the
   deliverable path is not one of those Worker paths.
+- Set `allow_no_changes` to true for explicitly read-only research, inspection, or analysis Workers
+  whose useful result is their final response rather than a repository artifact. Keep it false for
+  implementation Workers, so an empty patch remains a hard failure.
 - Include concrete acceptance checks and repository-appropriate test commands.
 - test_commands are executed on Windows by Agent Farm and must be standalone commands accepted by
   the native command allowlist: read-only git; rg; pytest/ruff/mypy; `python -m` unittest, pytest,
@@ -307,6 +334,15 @@ Planning constraints:
 
 def _request_requires_deliverable(request: str) -> bool:
     lowered = request.casefold()
+    # A prohibition must not be mistaken for a deliverable request. This is
+    # common in inspect-only tasks such as "do not create a deliverable".
+    if re.search(
+        r"\b(?:do\s+not|don't|without|no)\b.{0,56}\b"
+        r"(?:write|create|produce|generate|compile|combine|aggregate|synthesi[sz]e)?\s*"
+        r"(?:a\s+|an\s+|the\s+)?(?:report|brief|memo|document|deliverable)\b",
+        lowered,
+    ):
+        return False
     chinese_markers = ("汇总", "报告", "总结成", "整理成", "写一份")
     if any(marker in request for marker in chinese_markers):
         return True
@@ -342,6 +378,7 @@ def draft_worker_plan(
 
     repo_root = repo_root.resolve()
     config = load_config(repo_root, config_path)
+    require_harness(config, "supervisor")
     if (
         type(config.supervisor_timeout_seconds) is not int
         or config.supervisor_timeout_seconds < 1
@@ -350,6 +387,24 @@ def draft_worker_plan(
     profiles = sorted(config.worker_profiles)
     if not profiles:
         profiles = [config.default_worker_profile or "default"]
+    profile_details: list[str] = []
+    for profile_name in profiles:
+        try:
+            resolved, selected = resolve_worker_profile(config, profile_name if profile_name != "default" else None)
+            tier = next(
+                (
+                    str(raw.get("capability_tier", "standard"))
+                    for name, raw in config.worker_profiles.items()
+                    if name == selected and isinstance(raw, dict)
+                ),
+                "standard",
+            )
+            profile_details.append(
+                f"- `{profile_name}`: capability tier `{tier}`, route "
+                f"`{effective_provider(resolved, 'worker') or 'unconfigured'}/{resolved.worker_model or 'unconfigured'}`"
+            )
+        except (TypeError, ValueError):
+            profile_details.append(f"- `{profile_name}`: capability tier `standard`")
 
     selected_task_id = slugify(task_id or request[:64], fallback="task")
     artifacts = (
@@ -370,9 +425,10 @@ def draft_worker_plan(
         base_ref=base_ref,
         worker_count=worker_count,
         profiles=profiles,
+        profile_details="\n".join(profile_details),
         attachment_context=attachment_context,
     )
-    if config.agent_backend == "native":
+    if effective_harness(config, "supervisor") == "native":
         submit_schema = {
             key: value for key, value in WORKER_PLAN_SCHEMA.items() if key != "$schema"
         }
@@ -386,7 +442,7 @@ def draft_worker_plan(
                 "read-only tools, split the request into independent economical Worker tasks, and "
                 "call submit_worker_plan. Never edit files, run commands, or expose secrets."
             ),
-            provider=config.supervisor_provider or config.worker_provider,
+            provider=effective_provider(config, "supervisor"),
             model=config.supervisor_model or config.worker_model,
             timeout_seconds=None,
             writable=False,
@@ -408,6 +464,14 @@ def draft_worker_plan(
                 "agent_kind": "supervisor",
                 "phase": "planning",
             },
+            event_metadata=event_metadata(
+                config,
+                "supervisor",
+                provider=effective_provider(config, "supervisor"),
+                model=config.supervisor_model or config.worker_model,
+                session_id=selected_task_id,
+                phase="planning",
+            ),
         )
         stderr_file.write_text(result.error or "", encoding="utf-8")
         if not result.ok:
@@ -447,6 +511,23 @@ def draft_worker_plan(
             repo_root,
             timeout_seconds=None,
             input_text=planner_prompt,
+        )
+        raw_events = artifacts / "codex-events.raw.jsonl"
+        raw_events.write_text(command_result.stdout, encoding="utf-8")
+        normalized_external_events(
+            raw_path=raw_events,
+            output_path=artifacts / "supervisor-events.jsonl",
+            metadata=event_metadata(
+                config,
+                "supervisor",
+                provider=effective_provider(config, "supervisor"),
+                model=config.supervisor_model or config.worker_model,
+                session_id=selected_task_id,
+                phase="planning",
+            ),
+            callback=event_callback,
+            leading_event="agent.started",
+            trailing_event="agent.completed" if command_result.ok else "agent.failed",
         )
         stderr_file.write_text(command_result.stderr, encoding="utf-8")
         if not command_result.ok:
@@ -501,7 +582,8 @@ def draft_supervisor_decision(
     if not isinstance(farm_id, str) or not farm_id:
         raise SupervisorError("The Farm review package has no task_id.")
     config = load_config(repo_root, config_path)
-    if config.agent_backend != "native":
+    require_harness(config, "supervisor")
+    if effective_harness(config, "supervisor") != "native":
         raise SupervisorError("Automatic final review currently requires the native backend.")
     review_relative = review_file.relative_to(repo_root).as_posix()
     patch_paths: list[str] = []
@@ -534,7 +616,7 @@ approve_merge. Call submit_supervisor_decision with your final structured decisi
             "You are Agent Farm's final high-capability software reviewer. Use read-only tools to "
             "inspect actual evidence and diffs. Be skeptical, concise, and never modify files."
         ),
-        provider=config.supervisor_provider or config.worker_provider,
+        provider=effective_provider(config, "supervisor"),
         model=config.supervisor_model or config.worker_model,
         timeout_seconds=None,
         writable=False,
@@ -555,6 +637,14 @@ approve_merge. Call submit_supervisor_decision with your final structured decisi
             "agent_kind": "supervisor",
             "phase": "review",
         },
+        event_metadata=event_metadata(
+            config,
+            "supervisor",
+            provider=effective_provider(config, "supervisor"),
+            model=config.supervisor_model or config.worker_model,
+            session_id=farm_id,
+            phase="review",
+        ),
     )
     if not result.ok:
         raise SupervisorError(result.error or "Native Supervisor review failed.")

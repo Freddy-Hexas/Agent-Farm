@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +15,23 @@ from agent_farm.sandbox import (
     SandboxManager,
     SandboxUnavailable,
     _validate_read_only_host_command,
+    _run_process,
 )
 
 
 class SandboxTests(unittest.TestCase):
+    def test_process_runner_closes_pipes_after_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            process = _run_process(
+                ["python", "-c", "print('ok')"],
+                cwd=Path(tmp),
+                environment=dict(os.environ),
+                limits=SandboxLimits(10, 512, 1, 32, 4000),
+                cancel_check=None,
+            )
+            self.assertEqual(process[0], 0)
+            self.assertEqual(process[1].strip(), "ok")
+
     def test_windows_read_only_commands_reject_escape_and_process_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
@@ -50,6 +64,29 @@ class SandboxTests(unittest.TestCase):
                         cwd=root,
                         timeout_seconds=10,
                     )
+
+    def test_auto_backend_runs_read_only_verification_without_docker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "artifact.md").write_text("desktop planning and execution path was verified\n")
+            manager = SandboxManager(
+                backend="auto",
+                sandbox_mode="workspace-write",
+                memory_mb=512,
+                cpus=1,
+                pids=64,
+                max_output_chars=4000,
+            )
+            with patch.object(manager.docker, "available", return_value=False):
+                result = manager.run(
+                    ["rg", "--fixed-strings", "desktop planning", "artifact.md"],
+                    worktree=root,
+                    cwd=root,
+                    timeout_seconds=10,
+                )
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("desktop planning", result.stdout)
+            self.assertEqual(result.manifest["backend"], "windows-restricted")
 
     def test_docker_runner_uses_copy_network_denial_and_resource_limits(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:

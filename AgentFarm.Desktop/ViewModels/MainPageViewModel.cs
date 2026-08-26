@@ -36,6 +36,7 @@ public partial class MainPageViewModel : ObservableObject
     public ObservableCollection<CheckpointSummary> Checkpoints { get; } = [];
     public ObservableCollection<WorkerProfileSummary> ActiveProfiles { get; } = [];
     public ObservableCollection<ProviderOption> ProviderOptions { get; } = [];
+    public ObservableCollection<HarnessOption> HarnessOptions { get; } = [];
     public ObservableCollection<ModelOption> SupervisorModels { get; } = [];
     public ObservableCollection<ModelOption> WorkerModels { get; } = [];
     public ObservableCollection<WorkerProfileEditor> WorkerProfiles { get; } = [];
@@ -88,9 +89,12 @@ public partial class MainPageViewModel : ObservableObject
         RepositoryName = bootstrap.Repository.Name;
         RepositoryPath = bootstrap.Repository.Path;
         Branch = bootstrap.Repository.Branch;
-        SupervisorRoute = $"{bootstrap.Supervisor.Provider} · {bootstrap.Supervisor.Model}";
+        var supervisorHarness = bootstrap.Harnesses.FirstOrDefault(item => item.Id == bootstrap.Supervisor.HarnessId);
+        SupervisorRoute = $"{bootstrap.Supervisor.HarnessId} · {bootstrap.Supervisor.Provider} · {bootstrap.Supervisor.Model}"
+            + (supervisorHarness is null ? string.Empty : $" · {supervisorHarness.CapabilitySummary}");
         SupervisorMode = bootstrap.Supervisor.Mode;
 
+        Replace(HarnessOptions, bootstrap.Harnesses);
         Replace(ThreadCatalog, bootstrap.Threads);
         ApplyThreadFilter();
         Replace(Runs, bootstrap.Farms);

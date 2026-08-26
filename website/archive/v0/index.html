@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Agent Farm is a native Windows workspace for planning, running, and reviewing multi-agent jobs across models and providers."
+    />
+    <meta name="theme-color" content="#08090a" />
+    <title>Agent Farm — Multi-agent work, under control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-motion="signal" data-density="dense">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Agent Farm home">
+        <img
+          src="./assets/agent-farm-brand/agent-farm-512x512.png"
+          alt=""
+          width="28"
+          height="28"
+        />
+        <span>Agent Farm</span>
+        <span class="preview-badge">WINDOWS PREVIEW</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#orchestration">Orchestration</a>
+        <a href="#review">Review</a>
+        <a href="#architecture">Architecture</a>
+      </nav>
+
+      <a class="nav-action" href="../releases/v0.5.0.9/">Get the preview</a>
+    </header>
+
+    <main id="main">
+      <section class="hero hero-primary" id="top" aria-labelledby="hero-title">
+        <div class="hero-mesh" aria-hidden="true">
+          <div class="mesh-core"></div>
+          <div class="mesh-scan"></div>
+        </div>
+
+        <div class="hero-copy reveal">
+          <div class="section-kicker">
+            <span class="signal-dot"></span>
+            LOCAL MULTI-AGENT CONTROL PLANE
+          </div>
+          <h1 id="hero-title">
+            Keep the judgment.<br />
+            <span>Scale the work.</span>
+          </h1>
+          <p class="hero-lede">
+            One high-capability Supervisor plans and reviews. Economical Workers execute bounded jobs
+            in parallel—inside isolated worktrees, with evidence attached.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="../releases/v0.5.0.9/">
+              Download Windows preview
+              <span aria-hidden="true">↗</span>
+            </a>
+            <a class="button button-secondary" href="#orchestration">Trace a farm run</a>
+          </div>
+          <dl class="hero-facts" aria-label="Product facts">
+            <div>
+              <dt>01</dt>
+              <dd>Supervisor owns intent</dd>
+            </div>
+            <div>
+              <dt>02</dt>
+              <dd>Workers stay bounded</dd>
+            </div>
+            <div>
+              <dt>03</dt>
+              <dd>Evidence gates every result</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="control-plane reveal" aria-label="Concept preview of an Agent Farm run">
+          <div class="plane-titlebar">
+            <div class="plane-id">
+              <span class="brand-mark-mini"></span>
+              AF / CONTROL PLANE
+            </div>
+            <div class="plane-label">V0 CONCEPT PREVIEW</div>
+            <div class="plane-state"><span></span> DAEMON CONNECTED</div>
+          </div>
+
+          <div class="plane-grid">
+            <aside class="plane-rail">
+              <span class="rail-label">ROUTE</span>
+              <button class="rail-item is-active" type="button">PLAN</button>
+              <button class="rail-item" type="button">AGENTS</button>
+              <button class="rail-item" type="button">FILES</button>
+              <button class="rail-item" type="button">TESTS</button>
+              <button class="rail-item" type="button">REVIEW</button>
+              <div class="rail-spacer"></div>
+              <span class="rail-key">F9 / RUN</span>
+            </aside>
+
+            <div class="supervisor-pane">
+              <div class="pane-heading">
+                <span>SUPERVISOR</span>
+                <span class="pane-status">PLANNING</span>
+              </div>
+              <p class="task-label">REQUEST / BOUNDED REPOSITORY CHANGE</p>
+              <div class="plan-line is-live">
+                <span>01</span>
+                <p>Map the current behavior and protected paths.</p>
+              </div>
+              <div class="plan-line">
+                <span>02</span>
+                <p>Implement the smallest safe change in isolation.</p>
+              </div>
+              <div class="plan-line">
+                <span>03</span>
+                <p>Run focused tests and return reviewable evidence.</p>
+              </div>
+              <div class="command-line">
+                <span class="prompt">›</span>
+                <span>route workers by role, risk, and cost</span>
+                <span class="cursor" aria-hidden="true"></span>
+              </div>
+            </div>
+
+            <div class="agent-pane">
+              <div class="pane-heading">
+                <span>WORKER FABRIC</span>
+                <span>03 ROUTES</span>
+              </div>
+              <div class="agent-map" aria-hidden="true">
+                <svg viewBox="0 0 520 260" role="presentation">
+                  <path class="route route-a" d="M96 130 C190 130 194 48 312 48" />
+                  <path class="route route-b" d="M96 130 C210 130 210 130 312 130" />
+                  <path class="route route-c" d="M96 130 C190 130 194 212 312 212" />
+                  <circle class="route-packet packet-a" r="4" />
+                  <circle class="route-packet packet-b" r="4" />
+                  <circle class="route-packet packet-c" r="4" />
+                </svg>
+                <div class="agent-node supervisor-node">
+                  <span>S</span>
+                  <small>JUDGE</small>
+                </div>
+                <div class="agent-node worker-node worker-a">
+                  <span>W1</span>
+                  <small>MAP</small>
+                </div>
+                <div class="agent-node worker-node worker-b">
+                  <span>W2</span>
+                  <small>BUILD</small>
+                </div>
+                <div class="agent-node worker-node worker-c">
+                  <span>W3</span>
+                  <small>TEST</small>
+                </div>
+              </div>
+              <div class="evidence-strip">
+                <span>ISOLATED WORKTREES</span>
+                <span>PATH GATES</span>
+                <span>PATCH + TESTS</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="capture-placeholder">
+            [ FULL BUILD: REPLACE CONCEPT SURFACE WITH A CURRENT LOCAL PRODUCT CAPTURE ]
+          </div>
+        </div>
+
+        <div class="hero-index" aria-hidden="true">HERO / 01</div>
+      </section>
+
+      <section class="hero hero-orchestration" id="orchestration" aria-labelledby="orchestration-title">
+        <div class="section-grid" aria-hidden="true"></div>
+        <div class="orchestration-copy reveal">
+          <div class="section-kicker">EXECUTION FABRIC / ONE INTENT, MANY BOUNDED ROUTES</div>
+          <h2 id="orchestration-title">Parallel work.<br />Without parallel chaos.</h2>
+          <p>
+            Every Worker gets a role, a model route, an allowed surface, and an isolated worktree.
+            The Supervisor sees ordered evidence—not three agents talking over one another.
+          </p>
+        </div>
+
+        <div class="route-stage reveal" aria-label="Conceptual flow from request to workers">
+          <div class="route-origin">
+            <span>INTENT</span>
+            <strong>SUPERVISOR</strong>
+            <small>PLAN / ROUTE / JUDGE</small>
+          </div>
+
+          <div class="route-bus" aria-hidden="true">
+            <span class="bus-pulse bus-pulse-1"></span>
+            <span class="bus-pulse bus-pulse-2"></span>
+            <span class="bus-pulse bus-pulse-3"></span>
+          </div>
+
+          <div class="worker-stack">
+            <article class="worker-lane">
+              <div class="lane-number">W/01</div>
+              <div>
+                <strong>Repository mapper</strong>
+                <span>READ-ONLY / STRUCTURE + CONSTRAINTS</span>
+              </div>
+              <div class="lane-state">BOUNDED</div>
+            </article>
+            <article class="worker-lane">
+              <div class="lane-number">W/02</div>
+              <div>
+                <strong>Implementation worker</strong>
+                <span>ISOLATED WORKTREE / ALLOWED PATHS</span>
+              </div>
+              <div class="lane-state">ISOLATED</div>
+            </article>
+            <article class="worker-lane">
+              <div class="lane-number">W/03</div>
+              <div>
+                <strong>Regression reviewer</strong>
+                <span>TESTS / FAILURE EVIDENCE / RISK</span>
+              </div>
+              <div class="lane-state">REVIEWING</div>
+            </article>
+          </div>
+        </div>
+
+        <div class="orchestration-wordmark" aria-hidden="true">CONTROLLED PARALLELISM</div>
+        <div class="hero-index" aria-hidden="true">HERO / 02</div>
+      </section>
+
+      <section class="hero hero-review" id="review" aria-labelledby="review-title">
+        <div class="review-copy reveal">
+          <div class="section-kicker">REVIEW PLANE / NOTHING MERGES ON A PROMISE</div>
+          <h2 id="review-title">Proof before merge.<br /><span>A path back after.</span></h2>
+          <p>
+            Files, diffs, tests, approvals, and policy checks converge in one decision surface.
+            Passing work gets a checkpoint. Failed evidence stays visible.
+          </p>
+        </div>
+
+        <div class="review-stage reveal" aria-label="Concept preview of the review workspace">
+          <div class="review-tabs" role="tablist" aria-label="Review preview tabs">
+            <button type="button" role="tab" aria-selected="false">FILES</button>
+            <button class="is-active" type="button" role="tab" aria-selected="true">CHANGES</button>
+            <button type="button" role="tab" aria-selected="false">TESTS</button>
+            <button type="button" role="tab" aria-selected="false">EVIDENCE</button>
+            <span>CONCEPT PREVIEW</span>
+          </div>
+          <div class="review-body">
+            <div class="review-summary">
+              <span class="review-label">DECISION INPUTS</span>
+              <div><span>PATH SCOPE</span><strong>CHECKED</strong></div>
+              <div><span>MACHINE REVIEW</span><strong>REQUIRED</strong></div>
+              <div><span>SUPERVISOR REVIEW</span><strong>REQUIRED</strong></div>
+              <div><span>ROLLBACK RECORD</span><strong>ON APPLY</strong></div>
+            </div>
+            <div class="diff-placeholder">
+              <div class="diff-heading">
+                <span>REVIEWABLE PATCH SURFACE</span>
+                <span>[ REAL LOCAL CAPTURE IN FULL BUILD ]</span>
+              </div>
+              <div class="diff-line"><span>01</span><i></i></div>
+              <div class="diff-line"><span>02</span><i></i></div>
+              <div class="diff-line add"><span>03</span><i></i></div>
+              <div class="diff-line add"><span>04</span><i></i></div>
+              <div class="diff-line"><span>05</span><i></i></div>
+              <div class="diff-line remove"><span>06</span><i></i></div>
+              <div class="diff-line add"><span>07</span><i></i></div>
+              <div class="diff-line"><span>08</span><i></i></div>
+            </div>
+          </div>
+          <div class="review-footer">
+            <span>CHECKPOINT CREATED BEFORE APPLY</span>
+            <div>
+              <button type="button" disabled>REQUEST REVISION</button>
+              <button class="approve" type="button" disabled>APPROVE + APPLY</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="rollback-orbit" aria-hidden="true">
+          <span>CHECKPOINT</span>
+          <i></i>
+          <strong>GO BACK</strong>
+        </div>
+        <div class="hero-index" aria-hidden="true">HERO / 03</div>
+      </section>
+
+      <section class="architecture" id="architecture" aria-labelledby="architecture-title">
+        <div class="architecture-heading reveal">
+          <div class="section-kicker">ARCHITECTURE / LOCAL-FIRST</div>
+          <h2 id="architecture-title">A control layer between intent and execution.</h2>
+        </div>
+        <ol class="architecture-flow reveal">
+          <li><span>01</span><strong>Native Windows workspace</strong><small>THREADS / COMPOSER / REVIEW</small></li>
+          <li><span>02</span><strong>Durable local daemon</strong><small>JOBS / EVENTS / APPROVALS</small></li>
+          <li><span>03</span><strong>Supervisor routing</strong><small>PLAN / BUDGET / DECISION</small></li>
+          <li><span>04</span><strong>Isolated Workers</strong><small>WORKTREES / PATCHES / TESTS</small></li>
+        </ol>
+      </section>
+
+      <section class="closing" aria-labelledby="closing-title">
+        <img
+          src="./assets/agent-farm-brand/agent-farm-512x512.png"
+          alt=""
+          width="72"
+          height="72"
+        />
+        <p class="section-kicker">AGENT FARM / WINDOWS PREVIEW</p>
+        <h2 id="closing-title">Make premium judgment<br />the part you keep.</h2>
+        <div class="hero-actions">
+          <a class="button button-primary" href="../releases/v0.5.0.9/">Get the local preview</a>
+          <a class="button button-secondary" href="../README.md">Read the product brief</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>AGENT FARM</span>
+      <span>LOCAL MULTI-AGENT INFRASTRUCTURE</span>
+      <span>V0 DESIGN PROTOTYPE / NOT FOR DEPLOYMENT</span>
+    </footer>
+
+    <button
+      class="tweaks-trigger"
+      type="button"
+      aria-expanded="false"
+      aria-controls="tweaks-panel"
+    >
+      TWEAKS
+    </button>
+    <aside class="tweaks-panel" id="tweaks-panel" aria-hidden="true">
+      <div class="tweaks-heading">
+        <strong>Tweaks</strong>
+        <button class="tweaks-close" type="button" aria-label="Close Tweaks">×</button>
+      </div>
+      <label for="motion-mode">Hero energy</label>
+      <select id="motion-mode">
+        <option value="quiet">Quiet</option>
+        <option value="signal" selected>Signal</option>
+        <option value="cinematic">Cinematic</option>
+      </select>
+      <label class="toggle-row" for="density-toggle">
+        <span>Terminal density</span>
+        <input id="density-toggle" type="checkbox" checked />
+      </label>
+      <p>V0 controls only. Full motion follows after direction approval.</p>
+    </aside>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

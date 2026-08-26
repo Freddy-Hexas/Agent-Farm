@@ -89,7 +89,118 @@ class ResearchBudgetSession:
         )
 
 
+class EmptyOnceSession:
+    def __init__(self):
+        self.turn = 0
+        self.prompts = []
+
+    def send(self, *, prompt=None, tool_results=None, tools=None):
+        self.turn += 1
+        self.prompts.append(prompt)
+        if self.turn == 1:
+            return ModelReply(response_id="empty", text="", tool_calls=[])
+        return ModelReply(
+            response_id="done",
+            text="",
+            tool_calls=[
+                ToolCall(
+                    call_id="finish-empty-retry",
+                    name="finish",
+                    arguments={"summary": "Recovered after an empty response.", "tests": [], "notes": []},
+                )
+            ],
+        )
+
+
+class AnalysisCompletionSession:
+    def __init__(self):
+        self.turn = 0
+        self.tool_names = []
+        self.prompts = []
+
+    def send(self, *, prompt=None, tool_results=None, tools=None):
+        self.turn += 1
+        self.prompts.append(prompt)
+        names = {tool["name"] for tool in tools or []}
+        self.tool_names.append(names)
+        if names == {"finish"}:
+            return ModelReply(
+                response_id="analysis-finish",
+                text="",
+                tool_calls=[
+                    ToolCall(
+                        call_id="finish-analysis",
+                        name="finish",
+                        arguments={"summary": "Analysis complete.", "tests": [], "notes": []},
+                    )
+                ],
+            )
+        return ModelReply(
+            response_id=f"analysis-{self.turn}",
+            text="",
+            tool_calls=[
+                ToolCall(
+                    call_id=f"list-{self.turn}",
+                    name="list_files",
+                    arguments={"path": ".", "pattern": "*", "max_results": 1},
+                )
+            ],
+        )
+
+
 class NativeAgentTests(unittest.TestCase):
+    def test_analysis_worker_is_forced_to_finish_after_bounded_inspection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "evidence.txt").write_text("evidence\n", encoding="utf-8")
+            session = AnalysisCompletionSession()
+            result = run_native_agent(
+                config=AgentFarmConfig(native_max_turns=12),
+                repo_root=root,
+                worktree=root,
+                prompt="# Worker Task\n\n- No-change analysis: `true`\n",
+                system_prompt="System",
+                provider="local",
+                model="test-model",
+                timeout_seconds=None,
+                writable=True,
+                events_file=root / "events.jsonl",
+                terminal_tool=FINISH_TOOL,
+                session=session,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(session.turn, 8)
+            self.assertEqual(session.tool_names[-1], {"finish"})
+            self.assertIn("Stop exploring now.", session.prompts[-1])
+
+    def test_empty_model_response_gets_one_continuation_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = EmptyOnceSession()
+            result = run_native_agent(
+                config=AgentFarmConfig(native_max_turns=4),
+                repo_root=root,
+                worktree=root,
+                prompt="Complete the smoke test.",
+                system_prompt="System",
+                provider="native",
+                model="test-model",
+                timeout_seconds=None,
+                writable=True,
+                events_file=root / "events.jsonl",
+                terminal_tool=FINISH_TOOL,
+                session=session,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(session.turn, 2)
+            self.assertEqual(
+                session.prompts[1],
+                "The previous model response was empty. Continue the task now; "
+                "use the available tools or finish with the requested result.",
+            )
+
     def test_web_research_budget_removes_web_tools_and_forces_completion(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

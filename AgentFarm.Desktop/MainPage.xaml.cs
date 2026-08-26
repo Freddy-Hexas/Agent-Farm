@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Input;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Windows.Storage.Pickers;
 using Windows.Storage;
 
@@ -34,6 +35,7 @@ public sealed partial class MainPage : Page
     private const double DefaultRightPaneWidth = 328;
     private const double NavigationCollapseBreakpoint = 820;
     private const double ExecutionCollapseBreakpoint = 1120;
+    private static readonly Regex ProviderIdPattern = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", RegexOptions.CultureInvariant);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
@@ -68,6 +70,8 @@ public sealed partial class MainPage : Page
     private bool _leftPaneAutoCollapsed;
     private bool _rightPaneAutoCollapsed;
     private bool _planning;
+
+    private readonly record struct ProviderRename(string OldId, string NewId);
     private string? _reportedRecoverySessionId;
     private int _focusRegionIndex;
 
@@ -103,10 +107,12 @@ public sealed partial class MainPage : Page
         SettingsSurface.SaveRequested += (sender, args) => OnSaveSettings(sender!, new RoutedEventArgs());
         SettingsSurface.SupervisorProviderChanged += (sender, args) => OnSupervisorProviderChanged(sender!, args);
         SettingsSurface.SupervisorModelChanged += (sender, args) => OnSupervisorModelChanged(sender!, args);
+        SettingsSurface.SupervisorCustomModelChanged += (sender, args) => OnSupervisorCustomModelChanged(sender!, args);
         SettingsSurface.AddWorkerProfileRequested += (sender, args) => OnAddWorkerProfile(sender!, new RoutedEventArgs());
         SettingsSurface.WorkerProfileChanged += (sender, args) => OnWorkerProfileSelectionChanged(sender!, args);
         SettingsSurface.WorkerProviderChanged += (sender, args) => OnWorkerProviderChanged(sender!, args);
         SettingsSurface.WorkerModelChanged += (sender, args) => OnWorkerModelChanged(sender!, args);
+        SettingsSurface.WorkerCustomModelChanged += (sender, args) => OnWorkerCustomModelChanged(sender!, args);
         SettingsSurface.RemoveWorkerProfileRequested += (sender, args) => OnRemoveWorkerProfile(sender!, new RoutedEventArgs());
         SettingsSurface.DiagnosticsExportRequested += OnDiagnosticsExportRequested;
         SettingsSurface.ReleaseChannelChanged += OnReleaseChannelChanged;
@@ -714,6 +720,7 @@ public sealed partial class MainPage : Page
             _settings = settings;
             ViewModel.SettingsPath = settings.EditablePath;
             MainPageViewModel.Replace(ViewModel.ProviderTemplates, settings.ProviderTemplates);
+            MainPageViewModel.Replace(ViewModel.HarnessOptions, settings.Options.Harnesses);
 
             ViewModel.Providers.Clear();
             var providerConfigs = settings.Config["model_providers"] as JsonObject ?? new JsonObject();
@@ -759,6 +766,7 @@ public sealed partial class MainPage : Page
                 {
                     Name = pair.Key,
                     DisplayName = GetString(profile, "display_name") ?? pair.Key,
+                    Harness = GetString(profile, "harness") ?? GetString(settings.Config, "worker_harness") ?? GetString(settings.Config, "agent_backend") ?? "native",
                     Provider = GetString(profile, "provider") ?? string.Empty,
                     Model = GetString(profile, "model") ?? string.Empty,
                     ReasoningMode = GetString(profile, "reasoning_mode") ?? string.Empty,
@@ -772,6 +780,9 @@ public sealed partial class MainPage : Page
 
             RefreshProviderOptions();
             SettingsSurface.SupervisorProvider.SelectedValue = supervisorProvider;
+            SettingsSurface.SupervisorHarness.SelectedValue = GetString(settings.Config, "supervisor_harness")
+                ?? GetString(settings.Config, "agent_backend")
+                ?? "native";
             SettingsSurface.SupervisorCustomModel.Text = supervisorModel;
             SetReasoningSelection(
                 SettingsSurface.SupervisorThinking,
@@ -779,6 +790,10 @@ public sealed partial class MainPage : Page
             SetReasoningSelection(
                 SettingsSurface.SupervisorEffort,
                 GetString(settings.Config, "supervisor_reasoning_effort"));
+            var overrides = settings.Config["codex_config_overrides"] as JsonObject;
+            SettingsSurface.NetworkAccess.IsChecked = GetBoolean(
+                overrides,
+                "sandbox_workspace_write.network_access");
             SettingsSurface.FarmBudget.Value = GetDouble(settings.Config, "farm_budget_usd") ?? 0;
             SettingsSurface.MonthlyBudget.Value = GetDouble(settings.Config, "monthly_budget_usd") ?? 0;
             SettingsSurface.BudgetPolicy.SelectedItem = GetString(settings.Config, "budget_policy") ?? "warn";
@@ -2302,7 +2317,10 @@ public sealed partial class MainPage : Page
         {
             return;
         }
+        _settingsUiUpdating = true;
         SettingsSurface.SupervisorCustomModel.Text = string.Empty;
+        SettingsSurface.SupervisorModel.SelectedIndex = -1;
+        _settingsUiUpdating = false;
         await LoadSupervisorModelsAsync(providerId, string.Empty, false);
     }
 
@@ -2314,7 +2332,26 @@ public sealed partial class MainPage : Page
         }
         if (SettingsSurface.SupervisorModel.SelectedValue is string model)
         {
+            _settingsUiUpdating = true;
             SettingsSurface.SupervisorCustomModel.Text = model;
+            _settingsUiUpdating = false;
+        }
+        UpdateSupervisorReasoning();
+    }
+
+    private void OnSupervisorCustomModelChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_settingsUiUpdating || SettingsSurface.SupervisorCustomModel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+        var customModel = SettingsSurface.SupervisorCustomModel.Text.Trim();
+        if (SettingsSurface.SupervisorModel.SelectedValue is string selectedModel
+            && !string.Equals(selectedModel, customModel, StringComparison.Ordinal))
+        {
+            _settingsUiUpdating = true;
+            SettingsSurface.SupervisorModel.SelectedIndex = -1;
+            _settingsUiUpdating = false;
         }
         UpdateSupervisorReasoning();
     }
@@ -2347,6 +2384,7 @@ public sealed partial class MainPage : Page
         }
 
         _settingsUiUpdating = true;
+        SettingsSurface.WorkerHarness.SelectedValue = _selectedWorkerProfile.Harness;
         SettingsSurface.WorkerProvider.SelectedValue = _selectedWorkerProfile.Provider;
         SettingsSurface.WorkerCustomModel.Text = _selectedWorkerProfile.Model;
         _settingsUiUpdating = false;
@@ -2376,7 +2414,27 @@ public sealed partial class MainPage : Page
         if (SettingsSurface.WorkerModel.SelectedValue is string model)
         {
             _selectedWorkerProfile.Model = model;
+            _settingsUiUpdating = true;
             SettingsSurface.WorkerCustomModel.Text = model;
+            _settingsUiUpdating = false;
+        }
+        UpdateWorkerReasoning();
+    }
+
+    private void OnWorkerCustomModelChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_settingsUiUpdating || _selectedWorkerProfile is null || SettingsSurface.WorkerCustomModel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+        var customModel = SettingsSurface.WorkerCustomModel.Text.Trim();
+        _selectedWorkerProfile.Model = customModel;
+        if (SettingsSurface.WorkerModel.SelectedValue is string selectedModel
+            && !string.Equals(selectedModel, customModel, StringComparison.Ordinal))
+        {
+            _settingsUiUpdating = true;
+            SettingsSurface.WorkerModel.SelectedIndex = -1;
+            _settingsUiUpdating = false;
         }
         UpdateWorkerReasoning();
     }
@@ -2423,8 +2481,13 @@ public sealed partial class MainPage : Page
     {
         var providerId = SettingsSurface.SupervisorProvider.SelectedValue as string ?? string.Empty;
         var modelId = SettingsSurface.SupervisorModel.SelectedValue as string ?? SettingsSurface.SupervisorCustomModel.Text.Trim();
+        var template = FindProviderTemplate(providerId);
         var capability = ViewModel.SupervisorModels.FirstOrDefault(item => item.Id == modelId)?.Reasoning;
-        capability = HasReasoning(capability) ? capability : FindProviderTemplate(providerId)?.Reasoning;
+        capability = HasReasoning(capability) ? capability : template?.Reasoning;
+        if (template?.Custom == true && !HasReasoning(ViewModel.SupervisorModels.FirstOrDefault(item => item.Id == modelId)?.Reasoning))
+        {
+            capability = GatewayReasoning(modelId, capability);
+        }
         ApplyReasoningOptions(
             ViewModel.SupervisorThinkingOptions,
             ViewModel.SupervisorEffortOptions,
@@ -2437,8 +2500,13 @@ public sealed partial class MainPage : Page
     {
         var providerId = SettingsSurface.WorkerProvider.SelectedValue as string ?? _selectedWorkerProfile?.Provider ?? string.Empty;
         var modelId = SettingsSurface.WorkerModel.SelectedValue as string ?? SettingsSurface.WorkerCustomModel.Text.Trim();
+        var template = FindProviderTemplate(providerId);
         var capability = ViewModel.WorkerModels.FirstOrDefault(item => item.Id == modelId)?.Reasoning;
-        capability = HasReasoning(capability) ? capability : FindProviderTemplate(providerId)?.Reasoning;
+        capability = HasReasoning(capability) ? capability : template?.Reasoning;
+        if (template?.Custom == true && !HasReasoning(ViewModel.WorkerModels.FirstOrDefault(item => item.Id == modelId)?.Reasoning))
+        {
+            capability = GatewayReasoning(modelId, capability);
+        }
         ApplyReasoningOptions(
             ViewModel.WorkerThinkingOptions,
             ViewModel.WorkerEffortOptions,
@@ -2449,6 +2517,33 @@ public sealed partial class MainPage : Page
 
     private static bool HasReasoning(ReasoningCapability? capability) =>
         capability is not null && (capability.Efforts.Count > 0 || capability.Thinking.Count > 0);
+
+    private static ReasoningCapability? GatewayReasoning(string modelId, ReasoningCapability? fallback)
+    {
+        var lowered = modelId.ToLowerInvariant();
+        if (lowered.Contains("qwen") || lowered.Contains("claude") || lowered.Contains("kimi") ||
+            lowered.Contains("glm") || lowered.Contains("minimax") || lowered.Contains("magistral"))
+        {
+            return new ReasoningCapability { Thinking = ["enabled", "disabled"] };
+        }
+        if (lowered.Contains("deepseek"))
+        {
+            return new ReasoningCapability
+            {
+                Efforts = ["high", "max"],
+                Thinking = ["enabled", "disabled"],
+            };
+        }
+        if (lowered.Contains("gpt") || lowered.Contains("codex") || lowered.Contains("o1") ||
+            lowered.Contains("o3") || lowered.Contains("o4"))
+        {
+            return new ReasoningCapability
+            {
+                Efforts = ["none", "default", "minimal", "low", "medium", "high", "xhigh", "max"],
+            };
+        }
+        return fallback;
+    }
 
     private void ApplyReasoningOptions(
         System.Collections.ObjectModel.ObservableCollection<string> thinkingTarget,
@@ -2474,7 +2569,8 @@ public sealed partial class MainPage : Page
         return ViewModel.ProviderTemplates.FirstOrDefault(item =>
             item.Id == providerId || item.Id == templateId ||
             (!string.IsNullOrWhiteSpace(configured?.BaseUrl) &&
-             string.Equals(item.BaseUrl.TrimEnd('/'), configured.BaseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)));
+             string.Equals(item.BaseUrl.TrimEnd('/'), configured.BaseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)))
+            ?? ViewModel.ProviderTemplates.FirstOrDefault(item => item.Id == "custom-openai-compatible");
     }
 
     private bool IsManualModelProvider(string providerId)
@@ -2531,6 +2627,7 @@ public sealed partial class MainPage : Page
         _selectedProvider = SettingsSurface.Providers.SelectedProvider as ProviderEditor;
         SettingsSurface.Providers.EditorDataContext = _selectedProvider;
         _settingsUiUpdating = true;
+        SettingsSurface.Providers.ProviderId = _selectedProvider?.Id ?? string.Empty;
         SettingsSurface.Providers.WireApi = _selectedProvider?.WireApi ?? "chat";
         SettingsSurface.Providers.ApiKey = _selectedProvider?.ApiKey ?? string.Empty;
         _settingsUiUpdating = false;
@@ -2642,6 +2739,116 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private bool TryRenameSelectedProvider(out ProviderRename? rename)
+    {
+        rename = null;
+        if (_selectedProvider is null)
+        {
+            return true;
+        }
+
+        var oldId = _selectedProvider.Id;
+        var newId = SettingsSurface.Providers.ProviderId.Trim();
+        if (string.Equals(oldId, newId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!ProviderIdPattern.IsMatch(newId))
+        {
+            SettingsSurface.Providers.ProviderId = oldId;
+            ShowInfo(
+                "Provider ID is invalid",
+                "Use 1-64 characters: letters, numbers, dots, dashes, or underscores. The first character must be a letter or number.",
+                InfoBarSeverity.Warning);
+            return false;
+        }
+
+        if (ViewModel.Providers.Any(item =>
+                !ReferenceEquals(item, _selectedProvider)
+                && string.Equals(item.Id, newId, StringComparison.OrdinalIgnoreCase)))
+        {
+            SettingsSurface.Providers.ProviderId = oldId;
+            ShowInfo("Provider ID already exists", $"Choose a different ID than {newId}.", InfoBarSeverity.Warning);
+            return false;
+        }
+
+        _settingsUiUpdating = true;
+        try
+        {
+            _selectedProvider.Id = newId;
+            foreach (var profile in ViewModel.WorkerProfiles)
+            {
+                if (string.Equals(profile.Provider, oldId, StringComparison.OrdinalIgnoreCase))
+                {
+                    profile.Provider = newId;
+                }
+            }
+
+            if (string.Equals(SettingsSurface.SupervisorProvider.SelectedValue as string, oldId, StringComparison.OrdinalIgnoreCase))
+            {
+                SettingsSurface.SupervisorProvider.SelectedValue = newId;
+            }
+            if (string.Equals(SettingsSurface.WorkerProvider.SelectedValue as string, oldId, StringComparison.OrdinalIgnoreCase))
+            {
+                SettingsSurface.WorkerProvider.SelectedValue = newId;
+            }
+        }
+        finally
+        {
+            _settingsUiUpdating = false;
+        }
+
+        if (_settings?.Config["model_providers"] is JsonObject configuredProviders)
+        {
+            var rawProvider = configuredProviders[oldId];
+            configuredProviders.Remove(oldId);
+            if (rawProvider is not null)
+            {
+                configuredProviders[newId] = rawProvider;
+            }
+        }
+        if (_settings?.Config is JsonObject config)
+        {
+            MigrateProviderReferences(config, oldId, newId);
+        }
+
+        SettingsSurface.Providers.ProviderId = newId;
+        RefreshProviderOptions();
+        rename = new ProviderRename(oldId, newId);
+        return true;
+    }
+
+    private static void MigrateProviderReferences(JsonObject config, string oldId, string newId)
+    {
+        static string? Migrate(string? providerId, string sourceId, string targetId) =>
+            string.Equals(providerId, sourceId, StringComparison.OrdinalIgnoreCase) ? targetId : providerId;
+
+        static void MigrateField(JsonObject target, string key, string sourceId, string targetId)
+        {
+            var current = GetString(target, key);
+            if (current is not null)
+            {
+                SetString(target, key, Migrate(current, sourceId, targetId));
+            }
+        }
+
+        MigrateField(config, "supervisor_provider", oldId, newId);
+        MigrateField(config, "worker_provider", oldId, newId);
+        MigrateField(config, "worker_local_provider", oldId, newId);
+
+        if (config["worker_profiles"] is JsonObject profiles)
+        {
+            foreach (var profile in profiles)
+            {
+                if (profile.Value is JsonObject profileConfig)
+                {
+                    MigrateField(profileConfig, "provider", oldId, newId);
+                }
+            }
+        }
+    }
+
     private async void OnSaveSettings(object sender, RoutedEventArgs e)
     {
         if (_settings is null)
@@ -2650,13 +2857,33 @@ public sealed partial class MainPage : Page
         }
         try
         {
+            if (!TryRenameSelectedProvider(out var rename))
+            {
+                return;
+            }
             SynchronizeRouteEditors();
             var config = (JsonObject)_settings.Config.DeepClone();
+            if (rename is { } providerRename)
+            {
+                MigrateProviderReferences(config, providerRename.OldId, providerRename.NewId);
+            }
             SetString(config, "supervisor_provider", SettingsSurface.SupervisorProvider.SelectedValue as string);
+            SetString(config, "supervisor_harness", SettingsSurface.SupervisorHarness.SelectedValue as string);
             SetString(config, "supervisor_model", SelectedModel(SettingsSurface.SupervisorModel, SettingsSurface.SupervisorCustomModel));
             SetString(config, "supervisor_reasoning_mode", ReasoningValue(SettingsSurface.SupervisorThinking));
             SetString(config, "supervisor_reasoning_effort", ReasoningValue(SettingsSurface.SupervisorEffort));
             SetString(config, "default_worker_profile", SettingsSurface.DefaultWorkerProfile.SelectedValue as string);
+            SetString(config, "worker_harness", SettingsSurface.WorkerHarness.SelectedValue as string);
+            var overrides = config["codex_config_overrides"] as JsonObject ?? new JsonObject();
+            if (SettingsSurface.NetworkAccess.IsChecked == true)
+            {
+                overrides["sandbox_workspace_write.network_access"] = true;
+            }
+            else
+            {
+                overrides.Remove("sandbox_workspace_write.network_access");
+            }
+            config["codex_config_overrides"] = overrides;
             SetOptionalNumber(config, "farm_budget_usd", SettingsSurface.FarmBudget.Value);
             SetOptionalNumber(config, "monthly_budget_usd", SettingsSurface.MonthlyBudget.Value);
             SetString(config, "budget_policy", SettingsSurface.BudgetPolicy.SelectedItem as string ?? "warn");
@@ -2669,6 +2896,7 @@ public sealed partial class MainPage : Page
             {
                 var raw = (JsonObject)profile.Raw.DeepClone();
                 SetString(raw, "display_name", profile.DisplayName);
+                SetString(raw, "harness", profile.Harness);
                 SetString(raw, "provider", profile.Provider);
                 SetString(raw, "model", profile.Model);
                 SetString(raw, "reasoning_mode", profile.ReasoningMode);
@@ -2729,6 +2957,7 @@ public sealed partial class MainPage : Page
             return;
         }
         _selectedWorkerProfile.Provider = SettingsSurface.WorkerProvider.SelectedValue as string ?? _selectedWorkerProfile.Provider;
+        _selectedWorkerProfile.Harness = SettingsSurface.WorkerHarness.SelectedValue as string ?? _selectedWorkerProfile.Harness;
         _selectedWorkerProfile.Model = SelectedModel(SettingsSurface.WorkerModel, SettingsSurface.WorkerCustomModel);
         _selectedWorkerProfile.ReasoningMode = ReasoningValue(SettingsSurface.WorkerThinking) ?? string.Empty;
         _selectedWorkerProfile.ReasoningEffort = ReasoningValue(SettingsSurface.WorkerEffort) ?? string.Empty;
@@ -2793,8 +3022,13 @@ public sealed partial class MainPage : Page
     private AgentFarmApiClient RequireApi() =>
         _api ?? throw new InvalidOperationException("The local Agent Farm runtime is not connected.");
 
-    private static string SelectedModel(ComboBox combo, TextBox customBox) =>
-        combo.SelectedValue as string ?? customBox.Text.Trim();
+    private static string SelectedModel(ComboBox combo, TextBox customBox)
+    {
+        var customModel = customBox.Text.Trim();
+        return customBox.Visibility == Visibility.Visible && customModel.Length > 0
+            ? customModel
+            : combo.SelectedValue as string ?? customModel;
+    }
 
     private static string? ReasoningValue(ComboBox combo) =>
         combo.SelectedItem is string value && value != "Automatic" ? value : null;

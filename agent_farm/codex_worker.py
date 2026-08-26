@@ -85,6 +85,7 @@ def run_codex_worker(
     prompt: str,
     model: str | None,
     timeout_seconds: int | None,
+    events_file: Path | None = None,
 ) -> CommandResult:
     args = build_codex_args(
         config=config,
@@ -103,6 +104,6 @@ def run_codex_worker(
         input_text=prompt,
         env=env,
     )
-    paths.worker_events_file.write_text(result.stdout, encoding="utf-8")
+    (events_file or paths.worker_events_file).write_text(result.stdout, encoding="utf-8")
     paths.worker_stderr_file.write_text(result.stderr, encoding="utf-8")
     return result

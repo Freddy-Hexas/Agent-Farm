@@ -101,6 +101,12 @@ class WebUIContractTests(unittest.TestCase):
         self.assertIn("settings-supervisor-model-picker", self.html)
         self.assertNotIn("<datalist", self.html)
 
+    def test_compatible_gateways_have_live_catalogs_and_manual_model_ids(self) -> None:
+        self.assertIn('template.model_catalog?.mode === "live"', self.javascript)
+        self.assertIn("function providerAllowsManualModel(config, providerId)", self.javascript)
+        self.assertIn("<datalist id=", self.javascript)
+        self.assertIn("Gateway catalog unavailable", self.javascript)
+
     def test_reasoning_controls_are_model_specific(self) -> None:
         self.assertIn("modelReasoningCapability(config, providerId, modelId)", self.javascript)
         self.assertIn("data-profile-field=\"reasoning_mode\"", self.javascript)

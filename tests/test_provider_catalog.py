@@ -163,10 +163,11 @@ class ProviderCatalogTests(unittest.TestCase):
         self.assertEqual([model["id"] for model in result["models"]], ["openai/gpt-oss-20b"])
         self.assertEqual(result["models"][0]["reasoning"]["efforts"], ["low", "medium", "high"])
 
-    def test_custom_endpoint_named_openai_remains_manual(self) -> None:
+    def test_custom_openai_compatible_gateway_loads_models_and_keeps_manual_fallback(self) -> None:
         config = AgentFarmConfig(
             model_providers={
                 "Krill": {
+                    "template_id": "custom-openai-compatible",
                     "name": "OpenAI",
                     "base_url": "https://proxy.example.com/v1",
                     "env_key": "PROXY_KEY",
@@ -174,13 +175,113 @@ class ProviderCatalogTests(unittest.TestCase):
                 }
             }
         )
-        with self.assertRaisesRegex(ProviderCatalogError, "Enter its Model ID manually"):
-            discover_provider_models(
+        with patch.dict("os.environ", {"PROXY_KEY": "test-key"}):
+            result = discover_provider_models(
                 config=config,
                 repo_root=Path.cwd(),
                 provider_id="Krill",
-                transport=lambda *_: {},
+                transport=lambda *_: {"data": [{"id": "anthropic/claude-sonnet-4.5"}]},
             )
+
+        self.assertEqual(result["source"], "live")
+        self.assertEqual(result["models"][0]["id"], "anthropic/claude-sonnet-4.5")
+        self.assertEqual(
+            result["models"][0]["reasoning"],
+            {
+                "efforts": [],
+                "thinking": ["enabled", "disabled"],
+                "mandatory": False,
+            },
+        )
+
+        with patch.dict("os.environ", {"PROXY_KEY": "test-key"}):
+            manual = discover_provider_models(
+                config=config,
+                repo_root=Path.cwd(),
+                provider_id="Krill",
+                transport=lambda *_: (_ for _ in ()).throw(ProviderCatalogError("catalog disabled")),
+            )
+        self.assertEqual(manual["source"], "manual")
+        self.assertEqual(manual["models"], [])
+
+    def test_unidentified_gateway_is_discovered_without_an_official_template(self) -> None:
+        config = AgentFarmConfig(
+            model_providers={
+                "relay": {
+                    "name": "Team gateway",
+                    "base_url": "https://relay.example.com/v1",
+                    "env_key": "RELAY_KEY",
+                    "wire_api": "chat",
+                }
+            }
+        )
+        with patch.dict("os.environ", {"RELAY_KEY": "test-key"}):
+            result = discover_provider_models(
+                config=config,
+                repo_root=Path.cwd(),
+                provider_id="relay",
+                transport=lambda *_: {
+                    "data": [
+                        {"id": "qwen/qwen3-235b-a22b"},
+                        {"id": "anthropic/claude-sonnet-4.5"},
+                        {"id": "openai/gpt-5.5"},
+                    ]
+                },
+            )
+
+        self.assertEqual(result["template_id"], "custom-openai-compatible")
+        self.assertEqual(
+            {model["id"] for model in result["models"]},
+            {"qwen/qwen3-235b-a22b", "anthropic/claude-sonnet-4.5", "openai/gpt-5.5"},
+        )
+
+        with patch.dict("os.environ", {"RELAY_KEY": "test-key"}):
+            manual = discover_provider_models(
+                config=config,
+                repo_root=Path.cwd(),
+                provider_id="relay",
+                transport=lambda *_: {"data": []},
+            )
+        self.assertEqual(manual["source"], "manual")
+        self.assertEqual(manual["model_count"], 0)
+
+    def test_gateway_reasoning_metadata_overrides_family_fallback(self) -> None:
+        config = AgentFarmConfig(
+            model_providers={
+                "relay": {
+                    "template_id": "custom-openai-compatible",
+                    "base_url": "https://relay.example.com/v1",
+                    "requires_openai_auth": False,
+                }
+            }
+        )
+        result = discover_provider_models(
+            config=config,
+            repo_root=Path.cwd(),
+            provider_id="relay",
+            transport=lambda *_: {
+                "data": [
+                    {
+                        "id": "vendor/unknown-reasoning-model",
+                        "reasoning": {
+                            "supported_efforts": ["low", "high"],
+                            "thinking": ["enabled"],
+                            "mandatory": True,
+                            "default_effort": "high",
+                        },
+                    }
+                ]
+            },
+        )
+        self.assertEqual(
+            result["models"][0]["reasoning"],
+            {
+                "efforts": ["low", "high"],
+                "thinking": ["enabled"],
+                "mandatory": True,
+                "default": "high",
+            },
+        )
 
 
 if __name__ == "__main__":

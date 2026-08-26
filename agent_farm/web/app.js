@@ -312,6 +312,7 @@ function addWorker(seed = {}) {
     acceptance: seed.acceptance || [],
     forbidden_paths: seed.forbidden_paths || [],
     context: seed.context || "",
+    allow_no_changes: Boolean(seed.allow_no_changes),
   };
   state.workers.push(worker);
   renderWorkers();
@@ -498,6 +499,7 @@ function applyPlan(plan) {
     test_commands: worker.test_commands || [],
     acceptance: worker.acceptance || [],
     context: worker.context || "",
+    allow_no_changes: Boolean(worker.allow_no_changes),
   }));
   renderWorkers();
   $("#composer-card").classList.remove("hidden");
@@ -728,13 +730,18 @@ function providerTemplateForRoute(config, providerId) {
     return template.id === templateId
       || template.id === providerId
       || (normalizedBaseUrl && templateBaseUrl === normalizedBaseUrl);
-  }) || null;
+  }) || templates.find((template) => template.id === "custom-openai-compatible") || null;
 }
 
 function providerUsesOfficialCatalog(config, providerId) {
   providerId ||= "openai";
   const template = providerTemplateForRoute(config, providerId);
-  return Boolean(template && !template.custom && template.model_catalog?.mode === "live");
+  return Boolean(template && template.model_catalog?.mode === "live");
+}
+
+function providerAllowsManualModel(config, providerId) {
+  const template = providerTemplateForRoute(config, providerId);
+  return Boolean(!template || template.custom || template.model_catalog?.manual);
 }
 
 function providerCatalogModels(config, providerId) {
@@ -745,25 +752,51 @@ function providerCatalogModels(config, providerId) {
   return Array.isArray(template?.models) ? template.models.filter((model) => model?.id) : [];
 }
 
+function gatewayReasoningCapability(template, modelId) {
+  const fallback = template?.reasoning || { efforts: [], thinking: [] };
+  const lowered = String(modelId || "").toLowerCase();
+  if (!template?.custom || !lowered) return fallback;
+  if (lowered.includes("qwen") || lowered.includes("claude")) return { efforts: [], thinking: ["enabled", "disabled"] };
+  if (lowered.includes("deepseek")) return { efforts: ["high", "max"], thinking: ["enabled", "disabled"] };
+  if (["kimi", "glm", "minimax", "magistral"].some((token) => lowered.includes(token))) return { efforts: [], thinking: ["enabled", "disabled"] };
+  if (["gpt", "codex", "o1", "o3", "o4"].some((token) => lowered.includes(token))) {
+    return { efforts: ["none", "default", "minimal", "low", "medium", "high", "xhigh", "max"], thinking: [] };
+  }
+  return fallback;
+}
+
 function modelCatalogNote(config, providerId) {
   providerId ||= "openai";
-  if (!providerUsesOfficialCatalog(config, providerId)) return "Custom compatible route · enter the exact Model ID.";
+  const template = providerTemplateForRoute(config, providerId);
+  if (!providerUsesOfficialCatalog(config, providerId)) return "Compatible route · enter the exact Model ID.";
   const entry = state.providerCatalogs[providerId];
   if (!entry || entry.status === "loading") return "Loading every compatible model available to this provider account…";
   if (entry.status === "error") return entry.error || "Models could not be loaded.";
   const count = entry.catalog?.model_count ?? entry.catalog?.models?.length ?? 0;
+  if (entry.catalog?.source === "manual" || (template?.custom && count === 0)) return "Gateway catalog unavailable · enter the exact Model ID.";
   if (entry.catalog?.source === "fallback") return `${count} verified fallback models · live catalog unavailable.`;
   return `${count} available models · loaded from the provider.`;
+}
+
+function modelListId(providerId) {
+  return `agent-farm-models-${String(providerId || "provider").replace(/[^A-Za-z0-9_-]/g, "-")}`;
 }
 
 function modelPickerContents(config, providerId, selectedModel, fieldAttribute) {
   providerId ||= "openai";
   const official = providerUsesOfficialCatalog(config, providerId);
+  const models = providerCatalogModels(config, providerId);
+  if (providerAllowsManualModel(config, providerId)) {
+    const listId = modelListId(providerId);
+    const options = models.map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name && model.name !== model.id ? `${model.name} — ${model.id}` : model.id)}</option>`).join("");
+    const entry = state.providerCatalogs[providerId];
+    const noteClass = entry?.status === "error" ? " error" : "";
+    return `<input ${fieldAttribute} data-model-provider="${escapeHtml(providerId)}" list="${listId}" value="${escapeHtml(selectedModel || "")}" placeholder="Model ID (for example, openai/gpt-5.5)" spellcheck="false"><datalist id="${listId}">${options}</datalist><button class="model-refresh-button" type="button" data-refresh-models="${escapeHtml(providerId)}" title="Refresh model list" aria-label="Refresh model list"${entry?.status === "loading" ? " disabled" : ""}><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.2 9A7 7 0 0 0 6.1 6.1L4 8m16 8-2.1 1.9A7 7 0 0 1 5.8 15l-2.1 1.9"/></svg></button><span class="model-catalog-note${noteClass}">${escapeHtml(modelCatalogNote(config, providerId))}</span>`;
+  }
   if (!official) {
     return `<input ${fieldAttribute} data-model-provider="${escapeHtml(providerId)}" value="${escapeHtml(selectedModel || "")}" placeholder="Model ID" spellcheck="false"><span class="model-catalog-note">${escapeHtml(modelCatalogNote(config, providerId))}</span>`;
   }
   const entry = state.providerCatalogs[providerId];
-  const models = providerCatalogModels(config, providerId);
   const selectedAvailable = models.some((model) => model.id === selectedModel);
   let options = "";
   if (selectedModel && !selectedAvailable) {
@@ -780,7 +813,7 @@ function modelReasoningCapability(config, providerId, modelId) {
   const model = providerCatalogModels(config, providerId).find((item) => item.id === modelId);
   if (model?.reasoning) return model.reasoning;
   const template = providerTemplateForRoute(config, providerId);
-  return template?.reasoning || { efforts: [], thinking: [] };
+  return gatewayReasoningCapability(template, modelId);
 }
 
 function normalizeReasoningValues(config, providerId, capability, mode, effort) {

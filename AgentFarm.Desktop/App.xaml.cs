@@ -63,6 +63,12 @@ public partial class App : Application
         WriteMarker("Application launch entered");
         try
         {
+            if (Window is MainWindow existingWindow)
+            {
+                existingWindow.ShowWindow();
+                return;
+            }
+
             Window = new MainWindow();
             WriteMarker("Main window constructed");
             DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();

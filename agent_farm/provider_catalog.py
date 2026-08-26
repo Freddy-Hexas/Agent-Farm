@@ -279,6 +279,43 @@ def _reasoning_for_model(
     if template_id in {"siliconflow", "fireworks", "ollama"}:
         return _family_reasoning(model_id)
 
+    if template_id == "custom-openai-compatible":
+        raw_reasoning = item.get("reasoning")
+        if isinstance(raw_reasoning, dict):
+            allowed_efforts = {"none", "default", "minimal", "low", "medium", "high", "xhigh", "max"}
+            raw_efforts = raw_reasoning.get("supported_efforts") or raw_reasoning.get("efforts") or []
+            efforts = [str(value) for value in raw_efforts if str(value) in allowed_efforts]
+            raw_thinking = raw_reasoning.get("thinking") or raw_reasoning.get("modes") or []
+            thinking = [str(value) for value in raw_thinking if str(value) in {"enabled", "disabled"}]
+            if efforts or thinking:
+                return {
+                    "efforts": efforts,
+                    "thinking": thinking,
+                    "mandatory": bool(raw_reasoning.get("mandatory", False)),
+                    "default": raw_reasoning.get("default") or raw_reasoning.get("default_effort"),
+                }
+        # A gateway usually exposes only an ID and a display name. Use the
+        # family in that ID to avoid offering controls that the upstream model
+        # cannot understand, while retaining the complete neutral set for
+        # aliases that do not identify a family.
+        if "qwen" in lowered or "claude" in lowered:
+            return {"efforts": [], "thinking": ["enabled", "disabled"], "mandatory": False}
+        if "deepseek" in lowered:
+            family = _family_reasoning(model_id)
+            return family if family["efforts"] or family["thinking"] else {
+                "efforts": ["high", "max"],
+                "thinking": ["enabled", "disabled"],
+                "mandatory": False,
+            }
+        if any(token in lowered for token in ("kimi", "glm", "minimax", "magistral")):
+            return {"efforts": [], "thinking": ["enabled", "disabled"], "mandatory": False}
+        if any(token in lowered for token in ("gpt", "codex", "o1", "o3", "o4")):
+            return {
+                "efforts": ["none", "default", "minimal", "low", "medium", "high", "xhigh", "max"],
+                "thinking": [],
+                "mandatory": False,
+            }
+
     return _template_reasoning(template)
 
 
@@ -323,6 +360,18 @@ def _fallback_catalog(provider_id: str, template: dict[str, Any], warning: str) 
     }
 
 
+def _manual_catalog(provider_id: str, template: dict[str, Any], warning: str) -> dict[str, Any]:
+    return {
+        "provider_id": provider_id,
+        "template_id": template["id"],
+        "source": "manual",
+        "warning": warning,
+        "models": [],
+        "model_count": 0,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def discover_provider_models(
     *,
     config: AgentFarmConfig,
@@ -336,9 +385,9 @@ def discover_provider_models(
     if isinstance(configured, dict):
         provider.update(configured)
     template = provider_template_for(provider_id, provider)
-    if template is None or template.get("custom"):
+    if template is None:
         raise ProviderCatalogError(
-            "This is a custom OpenAI-compatible provider. Enter its Model ID manually."
+            "This provider has no model catalog template. Enter its Model ID manually."
         )
 
     try:
@@ -361,11 +410,22 @@ def discover_provider_models(
         fallback = _fallback_catalog(provider_id, template, str(exc))
         if fallback is not None:
             return fallback
+        if template.get("custom"):
+            # Gateways are allowed to omit /models or protect it with a
+            # separate permission. The route remains usable with an exact
+            # manually entered model ID in that case.
+            return _manual_catalog(provider_id, template, str(exc))
         raise ProviderCatalogError(str(exc)) from exc
 
     unique = {model["id"]: model for model in models}
     ordered = sorted(unique.values(), key=lambda model: (str(model["name"]).casefold(), model["id"]))
     if not ordered:
+        if template.get("custom"):
+            return _manual_catalog(
+                provider_id,
+                template,
+                "The provider returned no compatible text-generation models.",
+            )
         raise ProviderCatalogError("The provider returned no compatible text-generation models.")
     return {
         "provider_id": provider_id,

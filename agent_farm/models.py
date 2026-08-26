@@ -120,6 +120,10 @@ class MachineReview:
 @dataclass(frozen=True)
 class AgentFarmConfig:
     agent_backend: str = "native"
+    # Role-specific harnesses are additive to the legacy agent_backend field.
+    # None means "use agent_backend" for old configurations.
+    supervisor_harness: str | None = None
+    worker_harness: str | None = None
     codex_binary: str = "codex"
     supervisor_model: str | None = None
     supervisor_provider: str | None = None
@@ -188,6 +192,8 @@ class AgentFarmConfig:
     def to_json(self) -> dict[str, Any]:
         return {
             "agent_backend": self.agent_backend,
+            "supervisor_harness": self.supervisor_harness,
+            "worker_harness": self.worker_harness,
             "codex_binary": self.codex_binary,
             "supervisor_model": self.supervisor_model,
             "supervisor_provider": self.supervisor_provider,
@@ -268,6 +274,10 @@ class RunPaths:
     @property
     def worker_events_file(self) -> Path:
         return self.run_dir / "worker-events.jsonl"
+
+    @property
+    def worker_raw_events_file(self) -> Path:
+        return self.run_dir / "codex-events.raw.jsonl"
 
     @property
     def worker_stderr_file(self) -> Path:

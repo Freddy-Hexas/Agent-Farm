@@ -1,11 +1,32 @@
 from pathlib import Path
+import sys
 
 project_root = Path(SPECPATH).parent
+
+# Conda keeps the runtime DLLs in ``Library/bin`` instead of beside the Python
+# extension modules. PyInstaller can see the ``.pyd`` files but does not infer
+# this directory for the standard-library modules imported by the daemon.
+python_runtime_bin = Path(sys.base_prefix) / "Library" / "bin"
+python_runtime_dll_names = (
+    "libexpat.dll",
+    "libcrypto-3-x64.dll",
+    "libssl-3-x64.dll",
+    "liblzma.dll",
+    "libbz2.dll",
+    "libmpdec-4.dll",
+    "ffi.dll",
+    "sqlite3.dll",
+)
+python_runtime_binaries = [
+    (str(python_runtime_bin / name), ".")
+    for name in python_runtime_dll_names
+    if (python_runtime_bin / name).exists()
+]
 
 analysis = Analysis(
     [str(project_root / "packaging" / "agent_farm_backend_entry.py")],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=python_runtime_binaries,
     # The WinUI desktop talks to an API-only loopback server. Browser-console
     # HTML/CSS/JS stays in the Python source distribution and is intentionally
     # absent from the native MSIX backend.

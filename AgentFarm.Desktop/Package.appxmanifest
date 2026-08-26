@@ -10,7 +10,7 @@
   <Identity
     Name="AgentFarm.Desktop"
     Publisher="CN=Agent Farm"
-    Version="0.5.0.9" />
+    Version="0.5.0.13" />
 
   <mp:PhoneIdentity PhoneProductId="3993AAA1-6C4F-4A4C-9F11-DA584346440A" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

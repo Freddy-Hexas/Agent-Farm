@@ -26,6 +26,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(compact["protocol_version"], PROTOCOL_VERSION)
         self.assertNotIn("schemas", compact)
         self.assertEqual(set(complete["schemas"]), set(MESSAGE_SCHEMAS))
+        self.assertIn("harness-registry.v1", compact["capabilities"])
+        self.assertIn("harness_id", MESSAGE_SCHEMAS["worker"]["properties"])
 
     def test_negotiation_selects_version_and_capability_intersection(self):
         response = negotiate_protocol(

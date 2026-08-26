@@ -265,8 +265,25 @@ def _run_process(
         shell=False,
         creationflags=creationflags,
     )
-    if job is not None:
-        job.assign(process)
+    try:
+        if job is not None:
+            job.assign(process)
+    except BaseException:
+        # A Windows Job Object must own the process before the runner can
+        # safely continue. If assignment fails, terminate the already-started
+        # process and close both pipe handles instead of leaking a child.
+        try:
+            process.kill()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        raise
     buffers: dict[str, bytearray] = {"stdout": bytearray(), "stderr": bytearray()}
     totals = {"stdout": 0, "stderr": 0}
     output_limit = max(1, limits.max_output_chars * 4)
@@ -314,6 +331,9 @@ def _run_process(
         reader.join(timeout=2)
     stdout = buffers["stdout"].decode("utf-8", errors="replace")
     stderr = buffers["stderr"].decode("utf-8", errors="replace")
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            stream.close()
     truncated = output_exceeded.is_set() or any(total > output_limit for total in totals.values())
     return process.returncode, stdout, stderr, timed_out, cancelled, truncated
 
@@ -611,6 +631,36 @@ class SandboxManager:
                 cancel_check=cancel_check,
             )
         if self.sandbox_mode != "danger-full-access":
+            # Read-only verification commands do not execute repository code.
+            # Keep them usable on Windows when Docker Desktop is not running,
+            # while continuing to fail closed for interpreters and build tools.
+            if not command_executes_repository_code(argv):
+                if not self.docker.available():
+                    return self.windows.run(
+                        argv,
+                        worktree=worktree,
+                        cwd=cwd,
+                        limits=limits,
+                        cancel_check=cancel_check,
+                    )
+                try:
+                    return self.docker.run(
+                        argv,
+                        worktree=worktree,
+                        cwd=cwd,
+                        limits=limits,
+                        cancel_check=cancel_check,
+                    )
+                except SandboxUnavailable:
+                    # Docker can disappear between the availability probe and
+                    # command start, especially while Docker Desktop restarts.
+                    return self.windows.run(
+                        argv,
+                        worktree=worktree,
+                        cwd=cwd,
+                        limits=limits,
+                        cancel_check=cancel_check,
+                    )
             return self.docker.run(
                 argv,
                 worktree=worktree,

@@ -37,7 +37,7 @@ try {
     $env:AGENT_FARM_SOURCE_ROOT = $workspace
     $env:AGENT_FARM_PYTHON = $python
 
-    $output = Resolve-Path (Join-Path $workspace "AgentFarm.Desktop\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64")
+    $output = Resolve-Path (Join-Path $workspace "AgentFarm.Desktop\bin\x64\Debug\net8.0-windows10.0.26100.0\win-x64")
     $launchOutput = @(& winapp run $output --detach --json 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "winapp run failed with exit code $LASTEXITCODE.`n$($launchOutput -join "`n")"

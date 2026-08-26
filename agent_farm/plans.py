@@ -65,6 +65,7 @@ class WorkerPlanItem:
     complexity: str = "standard"
     attachments: list[str] = field(default_factory=list)
     depends_on: list[str] = field(default_factory=list)
+    allow_no_changes: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, index: int) -> "WorkerPlanItem":
@@ -83,6 +84,7 @@ class WorkerPlanItem:
             "complexity",
             "attachments",
             "depends_on",
+            "allow_no_changes",
         }
         unknown = sorted(set(data) - known)
         if unknown:
@@ -113,6 +115,9 @@ class WorkerPlanItem:
             raise ValueError(
                 f"workers[{index}].complexity must be simple, standard, or complex"
             )
+        allow_no_changes = data.get("allow_no_changes", False)
+        if type(allow_no_changes) is not bool:
+            raise ValueError(f"workers[{index}].allow_no_changes must be a boolean")
 
         return cls(
             worker_id=worker_id,
@@ -127,6 +132,7 @@ class WorkerPlanItem:
             complexity=complexity,
             attachments=_string_list(data, "attachments"),
             depends_on=_string_list(data, "depends_on"),
+            allow_no_changes=allow_no_changes,
         )
 
     def to_json(self) -> dict[str, Any]:
@@ -143,6 +149,7 @@ class WorkerPlanItem:
             "complexity": self.complexity,
             "attachments": list(self.attachments),
             "depends_on": list(self.depends_on),
+            "allow_no_changes": self.allow_no_changes,
         }
 
     def to_task_spec(self) -> str:
@@ -170,6 +177,7 @@ class WorkerPlanItem:
 - Task complexity: `{self.complexity}`
 - Assigned attachment IDs: `{', '.join(self.attachments) or 'none'}`
 - Runs after: `{', '.join(self.depends_on) or 'no dependencies'}`
+- No-change analysis: `{str(self.allow_no_changes).lower()}`
 - The expensive supervisor retains planning, final review, and merge authority.
 """
 

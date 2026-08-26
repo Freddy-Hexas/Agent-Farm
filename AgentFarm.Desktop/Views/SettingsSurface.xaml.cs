@@ -20,10 +20,12 @@ public sealed partial class SettingsSurface : UserControl
     public event EventHandler? SaveRequested;
     public event EventHandler<SelectionChangedEventArgs>? SupervisorProviderChanged;
     public event EventHandler<SelectionChangedEventArgs>? SupervisorModelChanged;
+    public event EventHandler<TextChangedEventArgs>? SupervisorCustomModelChanged;
     public event EventHandler? AddWorkerProfileRequested;
     public event EventHandler<SelectionChangedEventArgs>? WorkerProfileChanged;
     public event EventHandler<SelectionChangedEventArgs>? WorkerProviderChanged;
     public event EventHandler<SelectionChangedEventArgs>? WorkerModelChanged;
+    public event EventHandler<TextChangedEventArgs>? WorkerCustomModelChanged;
     public event EventHandler? RemoveWorkerProfileRequested;
     public event EventHandler? DiagnosticsExportRequested;
     public event EventHandler<SelectionChangedEventArgs>? ReleaseChannelChanged;
@@ -31,11 +33,13 @@ public sealed partial class SettingsSurface : UserControl
     public event EventHandler? UpdateInstallRequested;
 
     public ProviderSurface Providers => ProviderSettings;
+    public ComboBox SupervisorHarness => SupervisorHarnessCombo;
     public ComboBox SupervisorProvider => SupervisorProviderCombo;
     public ComboBox SupervisorModel => SupervisorModelCombo;
     public TextBox SupervisorCustomModel => SupervisorCustomModelBox;
     public ComboBox SupervisorThinking => SupervisorThinkingCombo;
     public ComboBox SupervisorEffort => SupervisorEffortCombo;
+    public CheckBox NetworkAccess => NetworkAccessCheckBox;
     public NumberBox FarmBudget => FarmBudgetBox;
     public NumberBox MonthlyBudget => MonthlyBudgetBox;
     public ComboBox BudgetPolicy => BudgetPolicyCombo;
@@ -43,6 +47,7 @@ public sealed partial class SettingsSurface : UserControl
     public ComboBox DefaultWorkerProfile => DefaultWorkerProfileCombo;
     public ListView WorkerProfiles => WorkerProfileList;
     public StackPanel WorkerProfileEditor => WorkerProfileEditorPanel;
+    public ComboBox WorkerHarness => WorkerHarnessCombo;
     public ComboBox WorkerProvider => WorkerProviderCombo;
     public ComboBox WorkerModel => WorkerModelCombo;
     public TextBox WorkerCustomModel => WorkerCustomModelBox;
@@ -80,10 +85,12 @@ public sealed partial class SettingsSurface : UserControl
     private void OnSave(object sender, RoutedEventArgs args) => SaveRequested?.Invoke(this, EventArgs.Empty);
     private void OnSupervisorProviderSelectionChanged(object sender, SelectionChangedEventArgs args) => SupervisorProviderChanged?.Invoke(this, args);
     private void OnSupervisorModelSelectionChanged(object sender, SelectionChangedEventArgs args) => SupervisorModelChanged?.Invoke(this, args);
+    private void OnSupervisorCustomModelChanged(object sender, TextChangedEventArgs args) => SupervisorCustomModelChanged?.Invoke(this, args);
     private void OnAddWorkerProfile(object sender, RoutedEventArgs args) => AddWorkerProfileRequested?.Invoke(this, EventArgs.Empty);
     private void OnWorkerProfileSelectionChanged(object sender, SelectionChangedEventArgs args) => WorkerProfileChanged?.Invoke(this, args);
     private void OnWorkerProviderSelectionChanged(object sender, SelectionChangedEventArgs args) => WorkerProviderChanged?.Invoke(this, args);
     private void OnWorkerModelSelectionChanged(object sender, SelectionChangedEventArgs args) => WorkerModelChanged?.Invoke(this, args);
+    private void OnWorkerCustomModelChanged(object sender, TextChangedEventArgs args) => WorkerCustomModelChanged?.Invoke(this, args);
     private void OnRemoveWorkerProfile(object sender, RoutedEventArgs args) => RemoveWorkerProfileRequested?.Invoke(this, EventArgs.Empty);
     private void OnExportDiagnostics(object sender, RoutedEventArgs args) => DiagnosticsExportRequested?.Invoke(this, EventArgs.Empty);
     private void OnReleaseChannelChanged(object sender, SelectionChangedEventArgs args) => ReleaseChannelChanged?.Invoke(this, args);

@@ -419,6 +419,7 @@ def resolve_model_route(
         raise ModelClientError(
             f"Provider '{selected_provider}' is not configured. Add it in Settings > Providers."
         )
+    template = provider_template_for(selected_provider, provider) or {}
 
     selected_model = (model or "").strip()
     if not selected_model:
@@ -426,7 +427,7 @@ def resolve_model_route(
     base_url = str(provider.get("base_url") or "").strip()
     if not base_url:
         raise ModelClientError(f"Provider '{selected_provider}' needs a base URL.")
-    wire_api = str(provider.get("wire_api") or "responses").strip().lower()
+    wire_api = str(provider.get("wire_api") or template.get("wire_api") or "responses").strip().lower()
     if wire_api not in {"responses", "chat"}:
         raise ModelClientError(f"Provider '{selected_provider}' has an unsupported wire API.")
 
@@ -469,7 +470,7 @@ def resolve_model_route(
         extra_query = {}
     return ModelRoute(
         provider_id=selected_provider,
-        template_id=(provider_template_for(selected_provider, provider) or {}).get("id"),
+        template_id=template.get("id"),
         model=selected_model,
         base_url=base_url,
         wire_api=wire_api,
@@ -844,6 +845,49 @@ class ModelSession:
             return
         if template_id == "fireworks" and mode:
             payload["reasoning"] = mode == "enabled"
+            return
+
+        if template_id == "custom-openai-compatible":
+            # A compatible gateway can front several upstream model families.
+            # Pick the least-surprising wire shape from the model ID while
+            # keeping the route fully usable for aliases that do not identify
+            # their upstream vendor.
+            lowered_model = self.route.model.casefold()
+            if "qwen" in lowered_model:
+                if mode:
+                    payload["enable_thinking"] = mode == "enabled"
+                return
+            if "claude" in lowered_model:
+                if mode:
+                    payload["thinking"] = {"type": mode}
+                return
+            if "deepseek" in lowered_model:
+                if effort == "xhigh":
+                    effort = "max"
+                if mode:
+                    payload["thinking"] = {"type": mode}
+                if effort:
+                    if self.route.wire_api == "responses":
+                        payload["reasoning"] = {"effort": effort}
+                    else:
+                        payload["reasoning_effort"] = effort
+                return
+            if any(token in lowered_model for token in ("kimi", "glm", "minimax", "magistral")):
+                if mode:
+                    payload["thinking"] = {"type": mode}
+                return
+            if self.route.wire_api == "responses":
+                if effort:
+                    payload["reasoning"] = {"effort": effort}
+                if mode and not any(token in lowered_model for token in ("gpt", "codex", "o1", "o3", "o4")):
+                    payload["thinking"] = {"type": mode}
+                return
+            if effort:
+                payload["reasoning_effort"] = effort
+            if mode and not any(token in lowered_model for token in ("gpt", "codex", "o1", "o3", "o4")):
+                # OpenRouter/NewAPI-style relays often expose a neutral
+                # enabled flag for models whose native family is unknown.
+                payload["reasoning"] = {"enabled": mode == "enabled"}
             return
 
         if self.route.wire_api == "responses":

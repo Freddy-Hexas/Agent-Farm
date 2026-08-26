@@ -72,6 +72,7 @@ def run_machine_review(
     *,
     worker_ok: bool = True,
     worker_failure_message: str | None = None,
+    allow_no_changes: bool = False,
 ) -> MachineReview:
     findings: list[ReviewFinding] = []
 
@@ -84,12 +85,20 @@ def run_machine_review(
             )
         )
 
-    if not changed_files:
+    if not changed_files and not allow_no_changes:
         findings.append(
             ReviewFinding(
                 severity="error",
                 code="no_changes",
                 message="Worker produced no git diff.",
+            )
+        )
+    elif not changed_files:
+        findings.append(
+            ReviewFinding(
+                severity="warning",
+                code="no_changes_allowed",
+                message="Worker completed without a git diff; this Worker was explicitly marked analysis-only.",
             )
         )
 

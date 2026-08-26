@@ -92,8 +92,14 @@ public sealed class BootstrapResponse
     [JsonPropertyName("supervisor")]
     public SupervisorMetadata Supervisor { get; set; } = new();
 
+    [JsonPropertyName("harnesses")]
+    public List<HarnessOption> Harnesses { get; set; } = [];
+
     [JsonPropertyName("profiles")]
     public List<WorkerProfileSummary> Profiles { get; set; } = [];
+
+    [JsonPropertyName("sessions")]
+    public List<SessionSummary> Sessions { get; set; } = [];
 
     [JsonPropertyName("threads")]
     public List<ThreadSummary> Threads { get; set; } = [];
@@ -205,6 +211,21 @@ public sealed class SupervisorMetadata
     [JsonPropertyName("provider")]
     public string Provider { get; set; } = string.Empty;
 
+    [JsonPropertyName("provider_id")]
+    public string ProviderId { get; set; } = string.Empty;
+
+    [JsonPropertyName("harness_id")]
+    public string HarnessId { get; set; } = string.Empty;
+
+    [JsonPropertyName("model_id")]
+    public string ModelId { get; set; } = string.Empty;
+
+    [JsonPropertyName("route_id")]
+    public string RouteId { get; set; } = string.Empty;
+
+    [JsonPropertyName("capabilities")]
+    public List<string> Capabilities { get; set; } = [];
+
     [JsonPropertyName("mode")]
     public string Mode { get; set; } = string.Empty;
 
@@ -226,8 +247,23 @@ public sealed class WorkerProfileSummary
     [JsonPropertyName("model")]
     public string Model { get; set; } = string.Empty;
 
+    [JsonPropertyName("model_id")]
+    public string ModelId { get; set; } = string.Empty;
+
     [JsonPropertyName("provider")]
     public string Provider { get; set; } = string.Empty;
+
+    [JsonPropertyName("provider_id")]
+    public string ProviderId { get; set; } = string.Empty;
+
+    [JsonPropertyName("harness_id")]
+    public string HarnessId { get; set; } = string.Empty;
+
+    [JsonPropertyName("route_id")]
+    public string RouteId { get; set; } = string.Empty;
+
+    [JsonPropertyName("capabilities")]
+    public List<string> Capabilities { get; set; } = [];
 
     [JsonPropertyName("provider_name")]
     public string? ProviderName { get; set; }
@@ -235,7 +271,32 @@ public sealed class WorkerProfileSummary
     [JsonPropertyName("is_default")]
     public bool IsDefault { get; set; }
 
-    public string RouteDescription => $"{ProviderName ?? Provider} · {Model}";
+    public string RouteDescription => $"{HarnessId} · {ProviderName ?? Provider} · {Model}"
+        + (Capabilities.Count == 0 ? string.Empty : $" · {string.Join(", ", Capabilities)}");
+}
+
+public sealed class HarnessOption
+{
+    [JsonPropertyName("harness_id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("display_name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("ready")]
+    public bool Ready { get; set; }
+
+    [JsonPropertyName("capabilities")]
+    public List<string> Capabilities { get; set; } = [];
+
+    [JsonPropertyName("supports")]
+    public Dictionary<string, bool> Supports { get; set; } = [];
+
+    public string CapabilitySummary => string.Join(", ", Capabilities);
+
+    public string DisplayName => Ready
+        ? $"{Name} · {CapabilitySummary}"
+        : $"{Name} (unavailable)";
 }
 
 public sealed class ThreadListResponse
@@ -471,6 +532,9 @@ public sealed class WorkerPlanItem
     [JsonPropertyName("context")]
     public string Context { get; set; } = string.Empty;
 
+    [JsonPropertyName("allow_no_changes")]
+    public bool AllowNoChanges { get; set; }
+
     [JsonIgnore]
     public string DependencyLabel => DependsOn.Count == 0
         ? "Runs in parallel"
@@ -587,6 +651,9 @@ public sealed class FarmWorkerPayload
     [JsonPropertyName("context")]
     public string Context { get; set; } = string.Empty;
 
+    [JsonPropertyName("allow_no_changes")]
+    public bool AllowNoChanges { get; set; }
+
     public static FarmWorkerPayload FromPlanItem(WorkerPlanItem worker) => new()
     {
         Id = worker.Id,
@@ -601,6 +668,7 @@ public sealed class FarmWorkerPayload
         TestCommands = [.. worker.TestCommands],
         Acceptance = [.. worker.Acceptance],
         Context = worker.Context,
+        AllowNoChanges = worker.AllowNoChanges,
     };
 }
 
@@ -669,6 +737,9 @@ public sealed class JobStreamEnvelope
     [JsonPropertyName("sequence")]
     public long Sequence { get; set; }
 
+    [JsonPropertyName("event_seq")]
+    public long EventSeq { get; set; }
+
     [JsonPropertyName("event")]
     public JobEvent Event { get; set; } = new();
 }
@@ -680,6 +751,9 @@ public sealed class JobEvent
 
     [JsonPropertyName("sequence")]
     public long Sequence { get; set; }
+
+    [JsonPropertyName("event_seq")]
+    public long EventSeq { get; set; }
 
     [JsonPropertyName("timestamp")]
     public DateTimeOffset Timestamp { get; set; }
@@ -704,6 +778,18 @@ public sealed class JobEvent
 
     [JsonPropertyName("model")]
     public string Model { get; set; } = string.Empty;
+
+    [JsonPropertyName("model_id")]
+    public string ModelId { get; set; } = string.Empty;
+
+    [JsonPropertyName("provider_id")]
+    public string ProviderId { get; set; } = string.Empty;
+
+    [JsonPropertyName("harness_id")]
+    public string HarnessId { get; set; } = string.Empty;
+
+    [JsonPropertyName("route_id")]
+    public string RouteId { get; set; } = string.Empty;
 
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
@@ -1171,6 +1257,42 @@ public sealed class SettingsOptions
 {
     [JsonPropertyName("wire_apis")]
     public List<string> WireApis { get; set; } = ["responses", "chat"];
+
+    [JsonPropertyName("harnesses")]
+    public List<HarnessOption> Harnesses { get; set; } = [];
+}
+
+public sealed class SessionSummary
+{
+    [JsonPropertyName("schema_version")]
+    public int SchemaVersion { get; set; } = 1;
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("parent_session_id")]
+    public string? ParentSessionId { get; set; }
+
+    [JsonPropertyName("role")]
+    public string Role { get; set; } = string.Empty;
+
+    [JsonPropertyName("harness_id")]
+    public string? HarnessId { get; set; }
+
+    [JsonPropertyName("provider_id")]
+    public string? ProviderId { get; set; }
+
+    [JsonPropertyName("model_id")]
+    public string? ModelId { get; set; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "created";
+
+    [JsonPropertyName("stop_reason")]
+    public string? StopReason { get; set; }
+
+    [JsonPropertyName("updated_at")]
+    public DateTimeOffset? UpdatedAt { get; set; }
 }
 
 public sealed class ProviderTemplate
@@ -1263,6 +1385,9 @@ public partial class WorkerProfileEditor : ObservableObject
     public partial string DisplayName { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string Harness { get; set; } = "native";
+
+    [ObservableProperty]
     public partial string Provider { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -1283,9 +1408,10 @@ public partial class WorkerProfileEditor : ObservableObject
     [ObservableProperty]
     public partial string CapabilityTier { get; set; } = "standard";
 
-    public string RouteSummary => $"{Provider} · {Model}";
+    public string RouteSummary => $"{Harness} · {Provider} · {Model}";
 
     partial void OnDisplayNameChanged(string value) => OnPropertyChanged(nameof(DisplayName));
+    partial void OnHarnessChanged(string value) => OnPropertyChanged(nameof(RouteSummary));
     partial void OnProviderChanged(string value) => OnPropertyChanged(nameof(RouteSummary));
     partial void OnModelChanged(string value) => OnPropertyChanged(nameof(RouteSummary));
 }
@@ -1317,6 +1443,7 @@ public partial class ProviderEditor : ObservableObject
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
 
+    partial void OnIdChanged(string value) => OnPropertyChanged(nameof(DisplayName));
     partial void OnNameChanged(string value) => OnPropertyChanged(nameof(DisplayName));
 }
 

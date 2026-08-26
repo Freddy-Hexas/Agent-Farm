@@ -12,14 +12,20 @@ PROVIDER_TEMPLATES: tuple[dict[str, Any], ...] = (
         "id": "custom-openai-compatible",
         "name": "Custom OpenAI-compatible",
         "category": "Custom",
-        "description": "Enter any OpenAI-compatible name, base URL, and API key.",
+        "description": "Use one gateway for any model family. Models are loaded from /models when available, with manual IDs always supported.",
         "base_url": "https://api.example.com/v1",
         "env_key": "CUSTOM_OPENAI_API_KEY",
         "wire_api": "chat",
         "docs_url": "",
         "custom": True,
-        "model_catalog": {"mode": "manual"},
-        "reasoning": {"efforts": [], "thinking": []},
+        "model_catalog": {"mode": "live", "parser": "openai", "manual": True},
+        # A gateway can front GPT, Claude, DeepSeek, Kimi, Qwen, and other
+        # families. Keep the complete neutral control set visible; the model
+        # adapter translates the selected values when the family is known.
+        "reasoning": {
+            "efforts": ["none", "default", "minimal", "low", "medium", "high", "xhigh", "max"],
+            "thinking": ["enabled", "disabled"],
+        },
     },
     {
         "id": "openai",
@@ -290,4 +296,10 @@ def provider_template_for(
         template_base = str(template.get("base_url") or "").rstrip("/").casefold()
         if normalized_base and template_base == normalized_base:
             return deepcopy(template)
+    # Any configured endpoint without an official identity is still a valid
+    # OpenAI-compatible gateway. Treat it as the universal custom template so
+    # it gets live /models discovery, manual model IDs, and neutral reasoning
+    # controls instead of silently losing those settings.
+    if raw or provider_id:
+        return deepcopy(next(template for template in PROVIDER_TEMPLATES if template["id"] == "custom-openai-compatible"))
     return None

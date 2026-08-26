@@ -8,12 +8,29 @@ from agent_farm.models import CommandResult
 from agent_farm.native_agent import NativeAgentResult
 from agent_farm.supervisor import (
     SupervisorError,
+    WORKER_PLAN_SCHEMA,
     draft_supervisor_decision,
     draft_worker_plan,
 )
 
 
 class SupervisorPlannerTests(unittest.TestCase):
+    def test_worker_function_schema_requires_every_declared_property(self):
+        worker_schema = WORKER_PLAN_SCHEMA["properties"]["workers"]["items"]
+        self.assertEqual(
+            set(worker_schema["properties"]),
+            set(worker_schema["required"]),
+        )
+
+    def test_negative_deliverable_instruction_is_not_treated_as_a_report_request(self):
+        from agent_farm.supervisor import _request_requires_deliverable
+
+        self.assertFalse(
+            _request_requires_deliverable(
+                "Inspect the repository and return a summary. Do not edit files or create a deliverable."
+            )
+        )
+
     def _config(self, root: Path) -> None:
         (root / "agent-farm.config.json").write_text(
             json.dumps(

@@ -10,7 +10,7 @@ param(
     [string]$PfxPath,
     [string]$PfxPassword = $env:AGENT_FARM_SIGNING_PASSWORD,
     [string]$Publisher = "CN=Agent Farm",
-    [string]$TimestampUrl = "http://timestamp.digicert.com",
+    [string]$TimestampUrl = "http://timestamp.sectigo.com",
     [switch]$SkipBuild,
     [switch]$AllowDevelopmentCertificate
 )
@@ -20,7 +20,7 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $manifestPath = Join-Path $projectRoot "AgentFarm.Desktop\Package.appxmanifest"
 $channelConfigPath = Join-Path $projectRoot "packaging\release_channels.json"
 $outputRoot = Join-Path $projectRoot "dist\release\$Channel\$Version"
-$releaseOutput = Join-Path $projectRoot "AgentFarm.Desktop\bin\$Platform\Release\net10.0-windows10.0.26100.0\win-$Platform"
+$releaseOutput = Join-Path $projectRoot "AgentFarm.Desktop\bin\$Platform\Release\net8.0-windows10.0.26100.0\win-$Platform"
 
 if (-not $PfxPassword) { throw "PfxPassword or AGENT_FARM_SIGNING_PASSWORD is required." }
 $resolvedPfx = (Resolve-Path -LiteralPath $PfxPath).Path
@@ -67,9 +67,22 @@ $appInstallerVersion = "{0}.{1}.{2}.{3}" -f (
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 $packagePath = Join-Path $outputRoot ([string]$policy.package_asset)
 $appInstallerPath = Join-Path $outputRoot ([string]$policy.appinstaller_asset)
+$certificateAsset = if ($AllowDevelopmentCertificate) { "AgentFarm-dev.cer" } else { "AgentFarm-signing.cer" }
+$certificatePath = Join-Path $outputRoot $certificateAsset
+$installerAssets = if ($AllowDevelopmentCertificate) { @("Install-AgentFarm.cmd", "Install-AgentFarm.ps1") } else { @() }
+$installerPaths = @($installerAssets | ForEach-Object { Join-Path $outputRoot $_ })
+$releaseNotesPath = Join-Path $outputRoot "README.md"
 $checksumsPath = Join-Path $outputRoot "SHA256SUMS.txt"
-foreach ($path in @($packagePath, $appInstallerPath, $checksumsPath)) {
+foreach ($path in @($packagePath, $appInstallerPath, $certificatePath, $releaseNotesPath, $checksumsPath) + $installerPaths) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+}
+[IO.File]::WriteAllBytes(
+    $certificatePath,
+    $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+)
+Copy-Item -LiteralPath (Join-Path $projectRoot "packaging\RELEASE_README.md") -Destination $releaseNotesPath -Force
+foreach ($installerAsset in $installerAssets) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot "packaging\$installerAsset") -Destination $outputRoot -Force
 }
 
 $temporaryManifest = Join-Path ([IO.Path]::GetTempPath()) "AgentFarm-$Version-$([Guid]::NewGuid().ToString('N')).appxmanifest"
@@ -88,11 +101,20 @@ try {
         --quiet
     if ($LASTEXITCODE -ne 0) { throw "winapp package failed." }
 
-    winapp sign $packagePath $resolvedPfx `
-        --password $PfxPassword `
-        --timestamp $TimestampUrl `
-        --quiet
-    if ($LASTEXITCODE -ne 0) { throw "winapp sign failed." }
+    $timestampUrls = @($TimestampUrl, "http://timestamp.sectigo.com", "http://timestamp.digicert.com") |
+        Select-Object -Unique
+    $signed = $false
+    foreach ($timestampUrl in $timestampUrls) {
+        winapp sign $packagePath $resolvedPfx `
+            --password $PfxPassword `
+            --timestamp $timestampUrl `
+            --quiet
+        if ($LASTEXITCODE -eq 0) {
+            $signed = $true
+            break
+        }
+    }
+    if (-not $signed) { throw "winapp sign failed for all configured timestamp services." }
 }
 finally {
     Remove-Item -LiteralPath $temporaryManifest -Force -ErrorAction SilentlyContinue
@@ -132,7 +154,7 @@ $appInstaller = @"
 "@
 [IO.File]::WriteAllText($appInstallerPath, $appInstaller, [Text.UTF8Encoding]::new($false))
 
-$hashLines = foreach ($path in @($packagePath, $appInstallerPath)) {
+$hashLines = foreach ($path in @($packagePath, $certificatePath, $releaseNotesPath, $appInstallerPath) + $installerPaths) {
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $([IO.Path]::GetFileName($path))"
 }
@@ -143,6 +165,9 @@ $hashLines = foreach ($path in @($packagePath, $appInstallerPath)) {
     appinstaller_version = $appInstallerVersion
     channel = $Channel
     package = $packagePath
+    certificate = $certificatePath
+    installer = $installerPaths
+    release_notes = $releaseNotesPath
     appinstaller = $appInstallerPath
     checksums = $checksumsPath
     signer = $signature.SignerCertificate.Subject

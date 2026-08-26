@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
+import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -288,7 +291,7 @@ class DesktopRuntime:
             self.server_thread.join(timeout=2)
 
 
-def run_desktop(
+def run_legacy_web_desktop(
     *,
     repo: Path,
     config_path: Path | None = None,
@@ -297,6 +300,8 @@ def run_desktop(
     maximized: bool = True,
     debug: bool = False,
 ) -> None:
+    """Launch the pre-native browser console for developer compatibility only."""
+
     if width < 1040 or height < 700:
         raise ValueError("Desktop window must be at least 1040 x 700.")
     webview = _load_webview()
@@ -336,6 +341,74 @@ def run_desktop(
         )
     finally:
         runtime.close()
+
+
+def run_desktop(
+    *,
+    repo: Path,
+    config_path: Path | None = None,
+    width: int = 1440,
+    height: int = 900,
+    maximized: bool = True,
+    debug: bool = False,
+) -> None:
+    """Launch the native WinUI desktop application from a source checkout.
+
+    The Python process is the orchestration runtime, not the product shell. The
+    native WinUI project owns the window, navigation, settings, and task
+    surfaces. This source launcher mirrors the packaged MSIX path so local
+    development cannot silently fall back to a browser window.
+    """
+
+    if sys.platform != "win32":
+        raise DesktopDependencyError(
+            "The Agent Farm desktop is a Windows WinUI application. Use the packaged MSIX or run it on Windows."
+        )
+    if width < 1040 or height < 700:
+        raise ValueError("Desktop window must be at least 1040 x 700.")
+
+    repo_root = find_repo_root(repo)
+    project = repo_root / "AgentFarm.Desktop" / "AgentFarm.Desktop.csproj"
+    if not project.is_file():
+        raise DesktopDependencyError(
+            f"The native WinUI project was not found at {project}."
+        )
+
+    dotnet = shutil.which("dotnet")
+    if not dotnet:
+        raise DesktopDependencyError(
+            "The .NET SDK is required for the source desktop launcher. Run Start-AgentFarm.cmd --check."
+        )
+
+    environment = os.environ.copy()
+    environment["AGENT_FARM_SOURCE_ROOT"] = str(repo_root)
+    environment["AGENT_FARM_REPO"] = str(repo_root)
+    environment["AGENT_FARM_NATIVE_DESKTOP"] = "1"
+    environment["AGENT_FARM_DESKTOP_WIDTH"] = str(width)
+    environment["AGENT_FARM_DESKTOP_HEIGHT"] = str(height)
+    environment["AGENT_FARM_DESKTOP_DEBUG"] = "1" if debug else "0"
+    if maximized:
+        environment.pop("AGENT_FARM_WINDOWED", None)
+    else:
+        environment["AGENT_FARM_WINDOWED"] = "1"
+    if config_path is not None:
+        environment["AGENT_FARM_CONFIG"] = str(config_path.resolve())
+
+    command = [
+        dotnet,
+        "run",
+        "--project",
+        str(project),
+        "--configuration",
+        "Debug",
+        "-p:Platform=x64",
+        "--no-launch-profile",
+    ]
+    completed = subprocess.run(command, cwd=repo_root, env=environment, check=False)
+    if completed.returncode != 0:
+        raise DesktopDependencyError(
+            f"The native WinUI desktop exited with code {completed.returncode}."
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

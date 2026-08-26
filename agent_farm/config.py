@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .harnesses import HARNESS_IDS
 from .models import AgentFarmConfig
 
 CONFIG_FILE = "agent-farm.config.json"
@@ -64,6 +65,7 @@ IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 PROFILE_KEY_MAP = {
+    "harness": "worker_harness",
     "model": "worker_model",
     "provider": "worker_provider",
     "reasoning_mode": "worker_reasoning_mode",
@@ -137,6 +139,12 @@ def _normalize_config_data(data: dict[str, Any]) -> dict[str, Any]:
             overrides[key] = normalized.pop(key)
     if overrides:
         normalized["codex_config_overrides"] = overrides
+    # Persist the new role-specific names when an older config explicitly
+    # selected a backend. Configs without the legacy key keep the dataclass
+    # fallback so partial local overlays remain valid.
+    if "agent_backend" in normalized:
+        normalized.setdefault("supervisor_harness", normalized["agent_backend"])
+        normalized.setdefault("worker_harness", normalized["agent_backend"])
     return normalized
 
 
@@ -235,6 +243,7 @@ def _validate_worker_profile(name: str, profile: Any) -> None:
     if unknown:
         raise ValueError(f"Unknown keys in worker profile '{name}': {', '.join(unknown)}")
     for key in (
+        "harness",
         "model",
         "provider",
         "reasoning_mode",
@@ -250,6 +259,9 @@ def _validate_worker_profile(name: str, profile: Any) -> None:
         f"worker_profiles.{name}.display_name",
         max_length=120,
     )
+    harness = profile.get("harness")
+    if harness is not None and harness not in HARNESS_IDS:
+        raise ValueError(f"worker_profiles.{name}.harness must be native or codex.")
     capability_tier = profile.get("capability_tier", "standard")
     if capability_tier not in {"economy", "standard", "premium"}:
         raise ValueError(
@@ -292,6 +304,8 @@ def validate_config(config: AgentFarmConfig) -> AgentFarmConfig:
     """Validate runtime and UI-edited configuration without resolving secrets."""
     for key in (
         "agent_backend",
+        "supervisor_harness",
+        "worker_harness",
         "codex_binary",
         "supervisor_model",
         "supervisor_provider",
@@ -313,6 +327,10 @@ def validate_config(config: AgentFarmConfig) -> AgentFarmConfig:
         _optional_string(getattr(config, key), key)
     if config.agent_backend not in AGENT_BACKENDS:
         raise ValueError("agent_backend must be native or codex.")
+    for key in ("supervisor_harness", "worker_harness"):
+        value = getattr(config, key)
+        if value is not None and value not in HARNESS_IDS:
+            raise ValueError(f"{key} must be native or codex.")
     if config.agent_backend == "codex" and not config.codex_binary.strip():
         raise ValueError("codex_binary must not be empty.")
     for key in ("supervisor_reasoning_mode", "worker_reasoning_mode"):
@@ -534,6 +552,8 @@ def local_config_template() -> dict[str, Any]:
     return {
         CONFIG_SCHEMA_KEY: CONFIG_SCHEMA_VERSION,
         "agent_backend": "native",
+        "supervisor_harness": "native",
+        "worker_harness": "native",
         "supervisor_model": "your-high-capability-model",
         "supervisor_provider": "my-provider",
         "default_worker_profile": "cheap",

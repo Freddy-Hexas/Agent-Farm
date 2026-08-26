@@ -1,6 +1,6 @@
 # Agent Farm architecture
 
-This document describes the architecture shipped in Agent Farm 0.5.0.9. The primary client is a
+This document describes the architecture shipped in Agent Farm 0.5.0.13. The primary client is a
 native WinUI 3 application; the optional browser console is a separate compatibility surface and
 is never embedded in the desktop window.
 
@@ -19,6 +19,7 @@ Native WinUI client
 Desktop runtime daemon
        |
        +-- threads, jobs, approvals, usage, checkpoints, diagnostics
+       +-- session event ledger and child-session lifecycle
        +-- Supervisor planner and final reviewer
        +-- farm scheduler and routing policy
        |
@@ -32,7 +33,7 @@ Desktop runtime daemon
 
 ## Native desktop layer
 
-`AgentFarm.Desktop` targets .NET 10, Windows App SDK, WinUI 3, and XAML. Its main surfaces are split
+`AgentFarm.Desktop` targets .NET 8, Windows App SDK, WinUI 3, and XAML. Its main surfaces are split
 into native user controls under `AgentFarm.Desktop/Views`: workspace, settings, providers, runs,
 review, and live execution. View models expose observable state and commands; the code-behind owns
 Windows integrations, navigation, long-running API calls, and lifecycle coordination.
@@ -67,9 +68,32 @@ Core responsibilities are separated by module:
 | `model_client.py` | Responses and Chat Completions adapters with incremental deltas |
 | `routing.py` | Explicit capability-, provider-, and model-aware Worker selection |
 | `change_control.py` | Candidate patch inspection, apply, merge, and rollback boundaries |
-| `runtime_store.py` | Durable SQLite jobs, ordered events, correlation IDs, and reconnect cursors |
-| `threads.py` | Persistent threads, turns, typed items, and event history |
+| `runtime_store.py` | Durable SQLite jobs, session ledger, ordered events, correlation IDs, and reconnect cursors |
+| `session_ledger.py` | Pure projections for session timelines and job summaries |
+| `subagents.py` | Child-session spawn/fork/resume/cancel/report and lineage policy |
+| `threads.py` | Persistent threads, turns, typed items, and ledger-backed compatibility projections |
 | `approvals.py` | Durable command, file-write, and network approval requests |
+| `task_runtime.py` | One-shot Supervisor -> Worker task execution, durable task state, replayable events, cancellation, and resume |
+
+### Executable task path
+
+The desktop can submit a complete task through `POST /api/tasks`. This is the
+runtime path, not a UI shortcut:
+
+1. `TaskRuntime` creates a durable `task` job and a matching session before any model request.
+2. The configured Supervisor route runs `draft_worker_plan` using read-only tools and emits the plan events.
+3. The validated plan is persisted under `.agent-farm/tasks/<task-id>/worker-plan.json`.
+4. `run_farm` resolves each Worker profile, creates isolated Git worktrees, and runs economical Worker routes concurrently.
+5. Worker tool/model events are appended to the task's ordered event stream before SSE subscribers are notified.
+6. Implementation Workers must produce a reviewed diff. Explicit analysis-only Workers carry
+   `allow_no_changes: true`; they are bounded to a concise inspection pass and may complete without a diff.
+7. Machine review and the configured Supervisor review/synthesis complete the task or leave a durable failure that can be resumed.
+
+`GET /api/tasks/<task-id>/events?after=N` and the matching SSE stream replay from the
+SQLite ledger. A desktop restart marks an active task `INTERRUPTED`; the task can be resumed
+without losing the previous event history. When `worker-plan.json` is valid, resume reuses that
+premium Supervisor checkpoint and starts at the Worker phase. A missing or invalid checkpoint
+falls back to a new planning pass.
 
 ## Task lifecycle
 
@@ -86,12 +110,15 @@ Core responsibilities are separated by module:
    synthesis. A Worker never writes directly into the Supervisor workspace.
 
 Planning and farm jobs are durable. The client reconnects with an event cursor after a window or
-daemon interruption. Cancellation is explicit and scoped to a plan, farm, or Worker.
+daemon interruption. Session events are committed before the runtime notifies SSE subscribers;
+threads and job views can be rebuilt from the append-only ledger. Cancellation is explicit and
+scoped to a plan, farm, Worker, or child session.
 
 ## Storage and recovery
 
 Repository-local product state lives under `.agent-farm/` and is ignored by Git. It includes the
-runtime descriptor, SQLite runtime database, thread history, farm artifacts, worktrees, approvals,
+runtime descriptor, SQLite runtime database (including `runtime_sessions` and `session_events`),
+thread history, farm artifacts, worktrees, approvals,
 diagnostics, and backups. Editable provider routes live in the ignored `agent-farm.local.json`;
 credentials live in `.agent-farm/secrets.env` or the process environment.
 

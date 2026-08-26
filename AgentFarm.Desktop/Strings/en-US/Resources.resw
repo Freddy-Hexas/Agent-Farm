@@ -28,7 +28,7 @@
   <data name="SupervisorDescription.Text" xml:space="preserve"><value>Read-only planner and final reviewer. Choose the strongest model here.</value></data>
   <data name="SupervisorProvider.Header" xml:space="preserve"><value>Provider</value></data>
   <data name="SupervisorModel.Header" xml:space="preserve"><value>Model</value></data>
-  <data name="SupervisorCustomModel.Header" xml:space="preserve"><value>Custom model ID</value></data>
+  <data name="SupervisorCustomModel.Header" xml:space="preserve"><value>Model ID (gateway)</value></data>
   <data name="SupervisorThinking.Header" xml:space="preserve"><value>Thinking</value></data>
   <data name="SupervisorEffort.Header" xml:space="preserve"><value>Reasoning effort</value></data>
   <data name="CostBudgetsTitle.Text" xml:space="preserve"><value>Cost budgets</value></data>

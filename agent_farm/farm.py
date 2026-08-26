@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import load_config, resolve_worker_profile
-from .git_ops import find_repo_root, resolve_ref
+from .git_ops import create_workspace_snapshot, find_repo_root, resolve_ref
+from .harnesses import effective_harness, effective_provider, route_id
 from .models import TaskStatus
 from .orchestrator import OrchestratorCancelled, run_task
 from .plans import WorkerPlan, WorkerPlanItem, read_supervisor_decision, read_worker_plan
@@ -33,16 +34,32 @@ def _worker_summary(
     worker: WorkerPlanItem,
     result: dict[str, Any],
     profile_metadata: dict[str, Any],
+    *,
+    parent_session_id: str | None = None,
 ) -> dict[str, Any]:
     selected_route = result.get("selected_route") or profile_metadata
+    stop_reason = result.get("stop_reason")
+    if not stop_reason:
+        stop_reason = (
+            "completed"
+            if (result.get("machine_review") or {}).get("status") == "passed"
+            else "blocked"
+        )
     return {
         "id": worker.worker_id,
         "role": worker.role,
         "profile": result.get("selected_profile") or worker.profile,
         "model": selected_route["model"],
         "provider": selected_route["provider"],
+        "model_id": selected_route["model"],
+        "provider_id": selected_route["provider"],
+        "harness_id": selected_route.get("harness_id", profile_metadata.get("harness_id")),
+        "route_id": selected_route.get("route_id", profile_metadata.get("route_id")),
         "attempts": result.get("attempts") or [],
         "status": result.get("status"),
+        "stop_reason": stop_reason,
+        "session_id": result.get("session_id"),
+        "parent_session_id": parent_session_id,
         "run_dir": result.get("run_dir"),
         "worktree": result.get("worktree"),
         "patch_file": result.get("patch_file"),
@@ -108,15 +125,23 @@ def _run_plan_worker(
                     "profile": profile,
                     "provider": metadata["provider"],
                     "model": metadata["model"],
+                    "provider_id": metadata["provider"],
+                    "model_id": metadata["model"],
+                    "harness_id": metadata["harness_id"],
+                    "route_id": metadata["route_id"],
                 }
             )
 
     for attempt_index, profile in enumerate(profiles):
         resolved, _ = resolve_worker_profile(config, profile)
         metadata = {
-            "provider": resolved.worker_provider,
+            "provider": effective_provider(resolved, "worker"),
             "model": resolved.worker_model,
+            "harness_id": effective_harness(resolved, "worker"),
+            "route_id": route_id(effective_provider(resolved, "worker"), resolved.worker_model),
         }
+        metadata["provider_id"] = metadata["provider"]
+        metadata["model_id"] = metadata["model"]
         emit(
             {
                 "type": "worker.started",
@@ -159,6 +184,10 @@ def _run_plan_worker(
                             "profile": profile,
                             "provider": metadata["provider"],
                             "model": metadata["model"],
+                            "provider_id": metadata["provider"],
+                            "model_id": metadata["model"],
+                            "harness_id": metadata["harness_id"],
+                            "route_id": metadata["route_id"],
                         }
                     )
                 ),
@@ -171,6 +200,8 @@ def _run_plan_worker(
                     "agent_kind": "worker",
                     "profile": profile,
                 },
+                allow_no_changes=worker.allow_no_changes,
+                snapshot_workspace=False,
             )
         except OrchestratorCancelled as exc:
             emit(
@@ -238,7 +269,11 @@ def _run_plan_worker(
         last_result["selected_profile"] = attempts[-1]["profile"]
         last_result["selected_route"] = {
             "provider": attempts[-1]["provider"],
+            "provider_id": attempts[-1]["provider"],
             "model": attempts[-1]["model"],
+            "model_id": attempts[-1]["model"],
+            "harness_id": attempts[-1]["harness_id"],
+            "route_id": attempts[-1]["route_id"],
         }
         return last_result
     raise last_error or FarmError(f"Worker '{worker.worker_id}' failed without a result.")
@@ -267,7 +302,20 @@ def run_farm(
         plan, routing_decisions = route_worker_plan(config, plan)
     except RoutingError as exc:
         raise FarmError(str(exc)) from exc
-    base_commit = resolve_ref(repo_root, plan.base_ref)
+    source_base_commit = resolve_ref(repo_root, plan.base_ref)
+    snapshot_paths = sorted(
+        {
+            path
+            for worker in plan.workers
+            for path in (worker.allowed_paths or config.allowed_paths)
+        }
+    )
+    base_commit = create_workspace_snapshot(
+        repo_root,
+        source_base_commit,
+        include_paths=snapshot_paths,
+        forbidden_paths=config.forbidden_paths,
+    )
 
     if type(config.max_parallel_workers) is not int or config.max_parallel_workers < 1:
         raise FarmError("max_parallel_workers must be a positive integer.")
@@ -277,7 +325,11 @@ def run_farm(
         resolved, _ = resolve_worker_profile(config, worker.profile)
         resolved_profiles[worker.worker_id] = {
             "model": resolved.worker_model,
-            "provider": resolved.worker_provider,
+            "model_id": resolved.worker_model or "unconfigured",
+            "provider": effective_provider(resolved, "worker"),
+            "provider_id": effective_provider(resolved, "worker") or "unconfigured",
+            "harness_id": effective_harness(resolved, "worker"),
+            "route_id": route_id(effective_provider(resolved, "worker"), resolved.worker_model),
             "timeout_seconds": resolved.timeout_seconds,
         }
         if not worker.allowed_paths and not config.allowed_paths:
@@ -293,6 +345,11 @@ def run_farm(
                 "type": "farm.started",
                 "farm_id": farm_id,
                 "worker_count": len(plan.workers),
+                "supervisor_harness_id": effective_harness(config, "supervisor"),
+                "supervisor_route_id": route_id(
+                    effective_provider(config, "supervisor"),
+                    config.supervisor_model or config.worker_model,
+                ),
             }
         )
     farm_dir = (repo_root / config.farms_dir / farm_id).resolve()
@@ -317,10 +374,21 @@ def run_farm(
         "farm_dir": str(farm_dir),
         "base_ref": plan.base_ref,
         "base_commit": base_commit,
+        "source_base_commit": source_base_commit,
+        "workspace_snapshot": base_commit != source_base_commit,
         "worker_count": len(plan.workers),
         "profile_assignments": resolved_profiles,
         "workers": [],
         "routing": routing_decisions,
+        "supervisor": {
+            "harness_id": effective_harness(config, "supervisor"),
+            "provider_id": effective_provider(config, "supervisor") or "unconfigured",
+            "model_id": config.supervisor_model or config.worker_model or "unconfigured",
+            "route_id": route_id(
+                effective_provider(config, "supervisor"),
+                config.supervisor_model or config.worker_model,
+            ),
+        },
     }
     write_json(farm_dir / "result.json", initial)
 
@@ -346,6 +414,8 @@ def run_farm(
                     "status": "waiting",
                     "depends_on": list(worker.depends_on),
                     "progress": 0,
+                    "harness_id": resolved_profiles[worker.worker_id]["harness_id"],
+                    "route_id": resolved_profiles[worker.worker_id]["route_id"],
                 }
             )
 
@@ -382,6 +452,8 @@ def run_farm(
                             "depends_on": list(worker.depends_on),
                             "error": message,
                             "progress": 100,
+                            "harness_id": resolved_profiles[worker_id]["harness_id"],
+                            "route_id": resolved_profiles[worker_id]["route_id"],
                         }
                     )
 
@@ -403,6 +475,8 @@ def run_farm(
                             "status": "ready",
                             "depends_on": list(worker.depends_on),
                             "progress": 5,
+                            "harness_id": resolved_profiles[worker.worker_id]["harness_id"],
+                            "route_id": resolved_profiles[worker.worker_id]["route_id"],
                         }
                     )
                 future = executor.submit(
@@ -452,12 +526,25 @@ def run_farm(
                     "profile": worker.profile,
                     "model": resolved_profiles[worker.worker_id]["model"],
                     "provider": resolved_profiles[worker.worker_id]["provider"],
+                    "model_id": resolved_profiles[worker.worker_id]["model_id"],
+                    "provider_id": resolved_profiles[worker.worker_id]["provider_id"],
+                    "harness_id": resolved_profiles[worker.worker_id]["harness_id"],
+                    "route_id": resolved_profiles[worker.worker_id]["route_id"],
                     "status": "FAILED_TO_RUN",
+                    "stop_reason": "failed",
                     "error": failures[worker.worker_id],
+                    "changed_files": [],
+                    "tests": [],
+                    "machine_review": {"status": "failed", "findings": []},
                 }
             )
             continue
-        summary = _worker_summary(worker, result, resolved_profiles[worker.worker_id])
+        summary = _worker_summary(
+            worker,
+            result,
+            resolved_profiles[worker.worker_id],
+            parent_session_id=farm_id,
+        )
         worker_records.append(summary)
         if summary["machine_review"].get("status") == "passed":
             passed_workers.append(worker.worker_id)
@@ -489,6 +576,13 @@ def run_farm(
         "workers": worker_records,
         "supervisor_contract": {
             "authority": "expensive-supervisor-only",
+            "harness_id": effective_harness(config, "supervisor"),
+            "provider_id": effective_provider(config, "supervisor") or "unconfigured",
+            "model_id": config.supervisor_model or config.worker_model or "unconfigured",
+            "route_id": route_id(
+                effective_provider(config, "supervisor"),
+                config.supervisor_model or config.worker_model,
+            ),
             "next_action": (
                 "Integrate every passing Worker artifact into the final deliverable."
                 if plan.deliverable is not None
@@ -505,7 +599,7 @@ def run_farm(
         config.auto_supervisor_review
         and plan.deliverable is not None
         and all_workers_passed
-        and config.agent_backend == "native"
+        and effective_harness(config, "supervisor") == "native"
     ):
         try:
             deliverable = synthesize_farm_deliverable(
@@ -522,8 +616,13 @@ def run_farm(
                             "agent_id": "supervisor-synthesis",
                             "agent_kind": "supervisor",
                             "display_name": "Synthesis Supervisor",
-                            "provider": config.supervisor_provider or config.worker_provider,
+                            "provider": effective_provider(config, "supervisor"),
                             "model": config.supervisor_model or config.worker_model,
+                            "harness_id": effective_harness(config, "supervisor"),
+                            "route_id": route_id(
+                                effective_provider(config, "supervisor"),
+                                config.supervisor_model or config.worker_model,
+                            ),
                         }
                     )
                 ),
@@ -536,8 +635,13 @@ def run_farm(
                             "agent_id": "supervisor-synthesis",
                             "agent_kind": "supervisor",
                             "display_name": "Synthesis Supervisor",
-                            "provider": config.supervisor_provider or config.worker_provider,
+                            "provider": effective_provider(config, "supervisor"),
                             "model": config.supervisor_model or config.worker_model,
+                            "harness_id": effective_harness(config, "supervisor"),
+                            "route_id": route_id(
+                                effective_provider(config, "supervisor"),
+                                config.supervisor_model or config.worker_model,
+                            ),
                         }
                     )
                 ),
@@ -557,7 +661,7 @@ def run_farm(
             result_payload["status"] = TaskStatus.REVISION_REQUESTED.value
             write_json(farm_dir / "result.json", result_payload)
             return result_payload
-    if config.auto_supervisor_review and passed_workers and config.agent_backend == "native":
+    if config.auto_supervisor_review and passed_workers and effective_harness(config, "supervisor") == "native":
         try:
             decision = draft_supervisor_decision(
                 repo_root=repo_root,
@@ -572,8 +676,13 @@ def run_farm(
                             "agent_id": "supervisor-review",
                             "agent_kind": "supervisor",
                             "display_name": "Review Supervisor",
-                            "provider": config.supervisor_provider or config.worker_provider,
+                            "provider": effective_provider(config, "supervisor"),
                             "model": config.supervisor_model or config.worker_model,
+                            "harness_id": effective_harness(config, "supervisor"),
+                            "route_id": route_id(
+                                effective_provider(config, "supervisor"),
+                                config.supervisor_model or config.worker_model,
+                            ),
                         }
                     )
                 ),
@@ -586,8 +695,13 @@ def run_farm(
                             "agent_id": "supervisor-review",
                             "agent_kind": "supervisor",
                             "display_name": "Review Supervisor",
-                            "provider": config.supervisor_provider or config.worker_provider,
+                            "provider": effective_provider(config, "supervisor"),
                             "model": config.supervisor_model or config.worker_model,
+                            "harness_id": effective_harness(config, "supervisor"),
+                            "route_id": route_id(
+                                effective_provider(config, "supervisor"),
+                                config.supervisor_model or config.worker_model,
+                            ),
                         }
                     )
                 ),

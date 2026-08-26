@@ -38,6 +38,13 @@ from .config import (
     write_local_config,
 )
 from .farm import record_supervisor_decision, review_farm, run_farm
+from .harnesses import (
+    available_harnesses,
+    effective_harness,
+    effective_provider,
+    named_subagent_providers,
+    route_id,
+)
 from .git_ops import find_repo_root
 from .model_client import DEFAULT_PROVIDERS
 from .plans import SupervisorDecision, WorkerPlan, read_worker_plan
@@ -57,6 +64,8 @@ from .diagnostics import (
 )
 from .retention import ArtifactRetentionManager
 from .runtime_store import RuntimeStore
+from .subagents import ChildSessionService, SessionOperationError
+from .task_runtime import TaskRuntime
 from .secrets import load_secrets_env, update_secrets_env
 from .supervisor import draft_worker_plan
 from .threads import ThreadStore
@@ -236,6 +245,13 @@ class JobRegistry:
             "attachments": attachment_items,
             "error": None,
             "correlation_id": valid_correlation_id(correlation_id),
+        }
+        job["session_id"] = f"session-farm-{job_id}"
+        job["parent_session_id"] = thread_id
+        job["role"] = "farm"
+        job["worker_session_ids"] = {
+            worker.worker_id: f"session-{job_id}-worker-{worker.worker_id}"
+            for worker in plan.workers
         }
         self._store.create_job("farm", job)
         self._state.logger.log(
@@ -444,7 +460,45 @@ class JobRegistry:
         return self.get(retried["job_id"])
 
     def _update(self, job_id: str, **changes: Any) -> None:
+        status = str(changes.get("status") or "")
+        if status in TERMINAL_JOB_STATUSES:
+            changes.setdefault(
+                "stop_reason",
+                {
+                    "COMPLETED": "completed",
+                    "CANCELLED": "cancelled",
+                    "INTERRUPTED": "cancelled",
+                    "FAILED": "failed",
+                }.get(status, "failed"),
+            )
         self._store.update_job("farm", job_id, changes, updated_at=_utc_now())
+        if status == "RUNNING":
+            job = self.get(job_id)
+            self._store.append_session_event(
+                job.get("session_id") or job_id,
+                {
+                    "type": "session/started",
+                    "status": "running",
+                    "timestamp": _utc_now(),
+                    "correlation_id": job.get("correlation_id"),
+                },
+            )
+        if status in TERMINAL_JOB_STATUSES:
+            job = self.get(job_id)
+            self._store.append_session_event(
+                job.get("session_id") or job_id,
+                {
+                    "type": f"session/{status.lower()}",
+                    "status": status.lower(),
+                    "stop_reason": changes.get("stop_reason"),
+                    "timestamp": _utc_now(),
+                    "correlation_id": job.get("correlation_id"),
+                    "parent_session_id": job.get("parent_session_id"),
+                    "farm_id": job.get("farm_id"),
+                    "thread_id": job.get("thread_id"),
+                    "turn_id": job.get("turn_id"),
+                },
+            )
         self._notify_change()
 
     def get(self, job_id: str) -> dict[str, Any]:
@@ -458,6 +512,19 @@ class JobRegistry:
         if local_sequence is not None:
             payload["local_sequence"] = local_sequence
         payload.setdefault("timestamp", _utc_now())
+        job = self.get(job_id)
+        payload.setdefault("session_id", job.get("session_id") or job_id)
+        worker_id = payload.get("agent_id")
+        worker_sessions = job.get("worker_session_ids")
+        if payload.get("agent_kind") == "worker" and isinstance(worker_id, str):
+            if isinstance(worker_sessions, dict) and worker_id in worker_sessions:
+                payload.setdefault("execution_session_id", payload.get("session_id"))
+                payload["session_id"] = worker_sessions[worker_id]
+        if payload.get("session_id") != job.get("session_id"):
+            payload.setdefault("parent_session_id", job.get("session_id"))
+        elif job.get("parent_session_id"):
+            payload.setdefault("parent_session_id", job["parent_session_id"])
+        payload.setdefault("farm_id", job.get("farm_id"))
         try:
             self._store.append_event("farm", job_id, payload)
         except FileNotFoundError:
@@ -581,6 +648,9 @@ class PlanJobRegistry:
             "error": None,
             "correlation_id": valid_correlation_id(correlation_id),
         }
+        job["session_id"] = f"session-plan-{job_id}"
+        job["parent_session_id"] = thread_id
+        job["role"] = "supervisor"
         self._store.create_job("plan", job)
         self._state.logger.log(
             "plan.queued",
@@ -644,6 +714,11 @@ class PlanJobRegistry:
                         "agent_id": "supervisor",
                         "agent_kind": "supervisor",
                         "display_name": "Planning Supervisor",
+                        "harness_id": effective_harness(self._state.config, "supervisor"),
+                        "route_id": route_id(
+                            effective_provider(self._state.config, "supervisor"),
+                            self._state.config.supervisor_model or self._state.config.worker_model,
+                        ),
                     },
                 ),
                 approval_callback=lambda request: self._state.approvals.request(
@@ -654,10 +729,18 @@ class PlanJobRegistry:
                         "agent_id": "supervisor",
                         "agent_kind": "supervisor",
                         "display_name": "Planning Supervisor",
-                        "provider": self._state.config.supervisor_provider
-                        or self._state.config.worker_provider,
+                        "provider": effective_provider(self._state.config, "supervisor"),
+                        "provider_id": effective_provider(self._state.config, "supervisor") or "unconfigured",
                         "model": self._state.config.supervisor_model
                         or self._state.config.worker_model,
+                        "model_id": self._state.config.supervisor_model
+                        or self._state.config.worker_model
+                        or "unconfigured",
+                        "harness_id": effective_harness(self._state.config, "supervisor"),
+                        "route_id": route_id(
+                            effective_provider(self._state.config, "supervisor"),
+                            self._state.config.supervisor_model or self._state.config.worker_model,
+                        ),
                     },
                     event_callback=lambda event: self._append_event(job_id, event),
                 ),
@@ -747,7 +830,44 @@ class PlanJobRegistry:
         return {"job_id": job_id, "status": "CANCELLING"}
 
     def _update(self, job_id: str, **changes: Any) -> None:
+        status = str(changes.get("status") or "")
+        if status in TERMINAL_JOB_STATUSES:
+            changes.setdefault(
+                "stop_reason",
+                {
+                    "COMPLETED": "completed",
+                    "CANCELLED": "cancelled",
+                    "INTERRUPTED": "cancelled",
+                    "FAILED": "failed",
+                }.get(status, "failed"),
+            )
         self._store.update_job("plan", job_id, changes, updated_at=_utc_now())
+        if status == "RUNNING":
+            job = self.get(job_id)
+            self._store.append_session_event(
+                job.get("session_id") or job_id,
+                {
+                    "type": "session/started",
+                    "status": "running",
+                    "timestamp": _utc_now(),
+                    "correlation_id": job.get("correlation_id"),
+                },
+            )
+        if status in TERMINAL_JOB_STATUSES:
+            job = self.get(job_id)
+            self._store.append_session_event(
+                job.get("session_id") or job_id,
+                {
+                    "type": f"session/{status.lower()}",
+                    "status": status.lower(),
+                    "stop_reason": changes.get("stop_reason"),
+                    "timestamp": _utc_now(),
+                    "correlation_id": job.get("correlation_id"),
+                    "parent_session_id": job.get("parent_session_id"),
+                    "thread_id": job.get("thread_id"),
+                    "turn_id": job.get("turn_id"),
+                },
+            )
         self._notify_change()
 
     def get(self, job_id: str) -> dict[str, Any]:
@@ -761,6 +881,12 @@ class PlanJobRegistry:
         if local_sequence is not None:
             payload["local_sequence"] = local_sequence
         payload.setdefault("timestamp", _utc_now())
+        job = self.get(job_id)
+        payload.setdefault("session_id", job.get("session_id") or job_id)
+        if payload.get("session_id") != job.get("session_id"):
+            payload.setdefault("parent_session_id", job.get("session_id"))
+        elif job.get("parent_session_id"):
+            payload.setdefault("parent_session_id", job["parent_session_id"])
         try:
             self._store.append_event("plan", job_id, payload)
         except FileNotFoundError:
@@ -824,9 +950,16 @@ class ConsoleState:
         ensure_inside(self.repo_root, self.submissions_dir)
         ensure_inside(self.repo_root, self.attachments_dir)
         self.submissions_dir.mkdir(parents=True, exist_ok=True)
-        self.threads = ThreadStore(self.repo_root / ".agent-farm" / "threads")
-        self.attachments = AttachmentStore(self.attachments_dir)
         self.runtime_store = RuntimeStore(self.runtime_root / "runtime.sqlite3")
+        self.session_service = ChildSessionService(
+            self.runtime_store,
+            config_getter=lambda: self.config,
+        )
+        self.threads = ThreadStore(
+            self.repo_root / ".agent-farm" / "threads",
+            runtime_store=self.runtime_store,
+        )
+        self.attachments = AttachmentStore(self.attachments_dir)
         self.checkpoints = CheckpointStore(
             self.repo_root,
             self.repo_root / ".agent-farm" / "checkpoints",
@@ -835,8 +968,9 @@ class ConsoleState:
         self.approvals = ApprovalBroker()
         self.jobs = JobRegistry(self)
         self.plan_jobs = PlanJobRegistry(self)
+        self.tasks = TaskRuntime(self)
         self.crash_recovery.record_reconciliation(
-            self.jobs.recovered_count + self.plan_jobs.recovered_count
+            self.jobs.recovered_count + self.plan_jobs.recovered_count + self.tasks.recovered_count
         )
         self.retention = ArtifactRetentionManager(
             self.runtime_root,
@@ -902,8 +1036,11 @@ class ConsoleState:
                 if key in PROVIDER_SETTINGS_FIELDS
             }
         data["model_providers"] = providers
+        data["supervisor_harness"] = effective_harness(self.config, "supervisor")
+        data["worker_harness"] = effective_harness(self.config, "worker")
         if not data["worker_profiles"]:
             legacy_profile = {
+                "harness": effective_harness(self.config, "worker"),
                 "display_name": "Default Worker",
                 "model": self.config.worker_model,
                 "provider": self.config.worker_provider,
@@ -962,7 +1099,7 @@ class ConsoleState:
             binary_path = shutil.which(binary)
             if binary_path is None and Path(binary).is_file():
                 binary_path = str(Path(binary).resolve())
-            active_provider = self.config.supervisor_provider or self.config.worker_provider or "openai"
+            active_provider = effective_provider(self.config, "supervisor") or "openai"
             active_status = provider_status.get(active_provider, {})
             provider_ready = active_provider in provider_status
             credential_ready = not active_status.get("uses_environment_credential") or bool(
@@ -975,6 +1112,10 @@ class ConsoleState:
                 and credential_ready
                 and endpoint_ready
             )
+            harness_catalog = available_harnesses(self.config)
+            harness_by_id = {item["harness_id"]: item for item in harness_catalog}
+            supervisor_harness = harness_by_id.get(effective_harness(self.config, "supervisor"), {})
+            worker_harness = harness_by_id.get(effective_harness(self.config, "worker"), {})
             return {
                 "schema_version": 1,
                 "app": {"name": "Agent Farm", "version": __version__},
@@ -984,6 +1125,10 @@ class ConsoleState:
                 "migration_required": not bool(self.config.worker_profiles),
                 "runtime": {
                     "active_backend": self.config.agent_backend,
+                    "active_supervisor_harness": effective_harness(self.config, "supervisor"),
+                    "active_worker_harness": effective_harness(self.config, "worker"),
+                    "active_supervisor_capabilities": supervisor_harness.get("capabilities", []),
+                    "active_worker_capabilities": worker_harness.get("capabilities", []),
                     "native_available": True,
                     "native_ready": native_ready,
                     "codex_available": binary_path is not None,
@@ -998,6 +1143,7 @@ class ConsoleState:
                 "price_catalog": price_catalog(self.config.model_price_overrides),
                 "options": {
                     "agent_backends": sorted(AGENT_BACKENDS),
+                    "harnesses": harness_catalog,
                     "sandbox_modes": sorted(SANDBOX_MODES),
                     "approval_policies": sorted(APPROVAL_POLICIES),
                     "budget_policies": sorted(BUDGET_POLICIES),
@@ -1020,6 +1166,12 @@ class ConsoleState:
             )
             self._model_catalog_cache[provider_id] = (time.monotonic(), result)
             return dict(result)
+
+    def harnesses(self) -> list[dict[str, Any]]:
+        return available_harnesses(self.config)
+
+    def subagent_providers(self) -> list[dict[str, Any]]:
+        return named_subagent_providers(self.config)
 
     def save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         unknown = sorted(set(payload) - {"config", "provider_secrets"})
@@ -1182,11 +1334,227 @@ class ConsoleState:
             raise ValueError("title must be a string.")
         return self.threads.create(title)
 
+    def sessions(self, *, parent_session_id: str | None = None) -> list[dict[str, Any]]:
+        return self.runtime_store.list_sessions(parent_session_id=parent_session_id)
+
+    def task(self, task_id: str) -> dict[str, Any]:
+        return self.tasks.get(task_id)
+
+    def task_events(self, task_id: str, *, after: int = 0) -> dict[str, Any]:
+        return self.tasks.events(task_id, after=after)
+
+    def session(self, session_id: str) -> dict[str, Any]:
+        session = self.runtime_store.get_session(session_id)
+        projection = self.runtime_store.session_projection(session_id)
+        return {
+            **session,
+            "event_count": projection["event_count"],
+            "last_event_seq": projection["last_event_seq"],
+            "event_types": projection["event_types"],
+            "children": self.runtime_store.session_children(session_id),
+        }
+
+    def session_events(self, session_id: str, *, after: int = 0) -> dict[str, Any]:
+        events = self.runtime_store.session_events(session_id, after=after)
+        session = self.runtime_store.get_session(session_id)
+        next_sequence = events[-1].get("event_seq", after) if events else after
+        return {
+            "session_id": session_id,
+            "events": events,
+            "next_sequence": next_sequence,
+            "status": session.get("status"),
+        }
+
+    def spawn_session(
+        self,
+        parent_session_id: str,
+        payload: dict[str, Any],
+        *,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        allowed = {
+            "role", "harness_id", "provider_id", "model_id", "route_id",
+            "permission_policy", "allowed_env_keys", "actor_session_id", "request",
+            "farm_id", "thread_id", "turn_id",
+        }
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError("Unknown session spawn fields: " + ", ".join(unknown))
+        env_keys = payload.get("allowed_env_keys", [])
+        if not isinstance(env_keys, list) or not all(isinstance(item, str) for item in env_keys):
+            raise ValueError("allowed_env_keys must be a list of strings.")
+        return self.session_service.spawn(
+            parent_session_id,
+            role=str(payload.get("role") or "worker"),
+            harness_id=str(payload.get("harness_id") or "native"),
+            provider_id=payload.get("provider_id"),
+            model_id=payload.get("model_id"),
+            route_id=payload.get("route_id"),
+            permission_policy=str(payload.get("permission_policy") or "unattended-readonly"),
+            allowed_env_keys=set(env_keys),
+            actor_session_id=payload.get("actor_session_id"),
+            request=payload.get("request"),
+            farm_id=payload.get("farm_id"),
+            thread_id=payload.get("thread_id"),
+            turn_id=payload.get("turn_id"),
+            correlation_id=correlation_id,
+        )
+
+    def create_session(
+        self,
+        payload: dict[str, Any],
+        *,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        allowed = {
+            "role", "harness_id", "provider_id", "model_id", "route_id",
+            "permission_policy", "allowed_env_keys", "request", "farm_id",
+            "thread_id", "turn_id",
+        }
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError("Unknown session fields: " + ", ".join(unknown))
+        env_keys = payload.get("allowed_env_keys", [])
+        if not isinstance(env_keys, list) or not all(isinstance(item, str) for item in env_keys):
+            raise ValueError("allowed_env_keys must be a list of strings.")
+        session_id = f"session-{uuid.uuid4().hex[:20]}"
+        now = _utc_now()
+        session = {
+            "schema_version": 1,
+            "session_id": session_id,
+            "parent_session_id": None,
+            "role": str(payload.get("role") or "supervisor"),
+            "harness_id": str(payload.get("harness_id") or "native"),
+            "provider_id": payload.get("provider_id"),
+            "model_id": payload.get("model_id"),
+            "route_id": payload.get("route_id"),
+            "status": "running",
+            "permission_policy": payload.get("permission_policy") or "unattended-readonly",
+            "allowed_env_keys": list(env_keys),
+            "request": payload.get("request"),
+            "correlation_id": correlation_id,
+            "farm_id": payload.get("farm_id"),
+            "thread_id": payload.get("thread_id"),
+            "turn_id": payload.get("turn_id"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.session_service._descriptor(session["harness_id"])
+        self.runtime_store.create_session(session)
+        self.runtime_store.append_session_event(
+            session_id,
+            {
+                "type": "session/started",
+                "status": "running",
+                "timestamp": now,
+                "correlation_id": correlation_id,
+            },
+        )
+        return self.runtime_store.get_session(session_id)
+
+    def session_report(self, session_id: str, *, actor_session_id: str | None = None) -> dict[str, Any]:
+        return self.session_service.report(session_id, actor_session_id=actor_session_id)
+
+    def cancel_session(self, session_id: str, *, actor_session_id: str | None = None) -> dict[str, Any]:
+        session = self.session_service.authorize(session_id, actor_session_id=actor_session_id)
+        task = next(
+            (candidate for candidate in self.tasks.recent() if candidate.get("session_id") == session_id),
+            None,
+        )
+        if task is not None:
+            if task.get("status") in TERMINAL_JOB_STATUSES:
+                return self.session_service.report(session_id, actor_session_id=actor_session_id)
+            try:
+                self.session_service.request_cancel(
+                    session_id,
+                    actor_session_id=actor_session_id,
+                )
+                result = self.tasks.cancel(task["job_id"])
+            except (WebConsoleError, RuntimeError, SessionOperationError):
+                return self.session_service.report(
+                    session_id,
+                    actor_session_id=actor_session_id,
+                )
+            return {**result, "session_id": session_id}
+        for job in self.jobs.recent():
+            if job.get("session_id") == session_id:
+                try:
+                    self.session_service.request_cancel(
+                        session_id,
+                        actor_session_id=actor_session_id,
+                    )
+                    result = self.jobs.cancel(job["job_id"])
+                except (WebConsoleError, SessionOperationError):
+                    return self.session_service.report(
+                        session_id,
+                        actor_session_id=actor_session_id,
+                    )
+                return {**result, "session_id": session_id}
+            worker_sessions = job.get("worker_session_ids")
+            if isinstance(worker_sessions, dict):
+                worker_id = next(
+                    (key for key, value in worker_sessions.items() if value == session_id),
+                    None,
+                )
+                if worker_id is not None:
+                    try:
+                        self.session_service.request_cancel(
+                            session_id,
+                            actor_session_id=actor_session_id,
+                        )
+                        result = self.jobs.cancel(job["job_id"], worker_id=worker_id)
+                    except (WebConsoleError, SessionOperationError):
+                        return self.session_service.report(
+                            session_id,
+                            actor_session_id=actor_session_id,
+                        )
+                    return {**result, "session_id": session_id}
+        for job in self.plan_jobs.recent():
+            if job.get("session_id") == session_id:
+                try:
+                    self.session_service.request_cancel(
+                        session_id,
+                        actor_session_id=actor_session_id,
+                    )
+                    result = self.plan_jobs.cancel(job["job_id"])
+                except (WebConsoleError, SessionOperationError):
+                    return self.session_service.report(
+                        session_id,
+                        actor_session_id=actor_session_id,
+                    )
+                return {**result, "session_id": session_id}
+        return self.session_service.cancel(session_id, actor_session_id=actor_session_id)
+
+    def resume_session(self, session_id: str, *, actor_session_id: str | None = None) -> dict[str, Any]:
+        self.session_service.authorize(session_id, actor_session_id=actor_session_id)
+        task = next(
+            (candidate for candidate in self.tasks.recent() if candidate.get("session_id") == session_id),
+            None,
+        )
+        if task is not None:
+            result = self.tasks.resume(task["job_id"])
+            return {**result, "session_id": session_id}
+        return self.session_service.resume(session_id, actor_session_id=actor_session_id)
+
+    def interrupt_session(self, session_id: str, *, actor_session_id: str | None = None) -> dict[str, Any]:
+        self.session_service.authorize(session_id, actor_session_id=actor_session_id)
+        task = next(
+            (candidate for candidate in self.tasks.recent() if candidate.get("session_id") == session_id),
+            None,
+        )
+        if task is not None:
+            if task.get("status") in TERMINAL_JOB_STATUSES:
+                return self.session_service.report(session_id, actor_session_id=actor_session_id)
+            self.session_service.request_cancel(session_id, actor_session_id=actor_session_id)
+            result = self.tasks.cancel(task["job_id"])
+            return {**result, "session_id": session_id, "operation": "interrupt"}
+        return self.session_service.interrupt(session_id, actor_session_id=actor_session_id)
+
     def bootstrap(self) -> dict[str, Any]:
         runtime = self.settings()["runtime"]
         supervisor_ready = bool(
             runtime["native_ready"]
-            if self.config.agent_backend == "native"
+            if effective_harness(self.config, "supervisor") == "native"
             else runtime["codex_available"]
         )
         profiles: list[dict[str, Any]] = []
@@ -1201,7 +1569,7 @@ class ConsoleState:
                 )
             except (TypeError, ValueError):
                 continue
-            provider = resolved.worker_provider
+            provider = effective_provider(resolved, "worker")
             provider_data = self.config.model_providers.get(provider or "", {})
             raw_profile = self.config.worker_profiles.get(name, {})
             display_name = (
@@ -1214,7 +1582,19 @@ class ConsoleState:
                     "name": selected or name,
                     "display_name": display_name or selected or name,
                     "model": resolved.worker_model or "Model required",
+                    "model_id": resolved.worker_model or "unconfigured",
                     "provider": provider or (resolved.worker_local_provider or "openai"),
+                    "provider_id": provider or (resolved.worker_local_provider or "openai"),
+                    "harness_id": effective_harness(resolved, "worker"),
+                    "route_id": route_id(provider, resolved.worker_model),
+                    "capabilities": next(
+                        (
+                            item["capabilities"]
+                            for item in self.harnesses()
+                            if item["harness_id"] == effective_harness(resolved, "worker")
+                        ),
+                        [],
+                    ),
                     "provider_name": provider_data.get("name") if isinstance(provider_data, dict) else None,
                     "timeout_seconds": resolved.timeout_seconds,
                     "is_default": (selected or name) == self.config.default_worker_profile,
@@ -1240,23 +1620,43 @@ class ConsoleState:
             },
             "supervisor": {
                 "model": self.config.supervisor_model or self.config.worker_model or "Model required",
-                "provider": self.config.supervisor_provider or self.config.worker_provider or "openai",
+                "model_id": self.config.supervisor_model or self.config.worker_model or "unconfigured",
+                "provider": effective_provider(self.config, "supervisor") or "openai",
+                "provider_id": effective_provider(self.config, "supervisor") or "openai",
+                "harness_id": effective_harness(self.config, "supervisor"),
+                "route_id": route_id(
+                    effective_provider(self.config, "supervisor"),
+                    self.config.supervisor_model or self.config.worker_model,
+                ),
+                "capabilities": next(
+                    (
+                        item["capabilities"]
+                        for item in self.harnesses()
+                        if item["harness_id"] == effective_harness(self.config, "supervisor")
+                    ),
+                    [],
+                ),
                 "profile": self.config.supervisor_codex_profile,
                 "timeout_seconds": self.config.supervisor_timeout_seconds,
-                "mode": f"{self.config.agent_backend} read-only planner",
+                "mode": f"{effective_harness(self.config, 'supervisor')} read-only planner",
                 "backend": self.config.agent_backend,
                 "ready": supervisor_ready,
             },
             "profiles": profiles,
+            "harnesses": self.harnesses(),
+            "subagent_providers": self.subagent_providers(),
+            "sessions": self.sessions(),
             "threads": self.threads.list(),
             "farms": self.list_farms(),
             "jobs": self.jobs.recent(),
             "plan_jobs": self.plan_jobs.recent(),
+            "tasks": self.tasks.recent(),
             "recovery": self.crash_recovery.report,
         }
 
     def close(self) -> None:
         self.approvals.close()
+        self.tasks.close()
         self.jobs.close()
         self.plan_jobs.close()
         self.attachments.close()
@@ -1274,6 +1674,7 @@ def _farm_summary(result: dict[str, Any]) -> dict[str, Any]:
         "farm_id": result.get("farm_id"),
         "plan_task_id": result.get("plan_task_id"),
         "status": result.get("status"),
+        "stop_reason": result.get("stop_reason"),
         "base_ref": result.get("base_ref"),
         "base_commit": result.get("base_commit"),
         "worker_count": result.get("worker_count", len(workers)),
@@ -1381,6 +1782,15 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             if path == "/api/settings":
                 self._send_json(HTTPStatus.OK, self.server.state.settings())
                 return
+            if path == "/api/harnesses":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "harnesses": self.server.state.harnesses(),
+                        "subagent_providers": self.server.state.subagent_providers(),
+                    },
+                )
+                return
             if path == "/api/pricing":
                 self._send_json(
                     HTTPStatus.OK,
@@ -1389,6 +1799,14 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/threads":
                 self._send_json(HTTPStatus.OK, {"threads": self.server.state.threads.list()})
+                return
+            if path == "/api/sessions":
+                query = parse_qs(urlsplit(self.path).query)
+                parent = query.get("parent", [None])[0]
+                self._send_json(HTTPStatus.OK, {"sessions": self.server.state.sessions(parent_session_id=parent)})
+                return
+            if path == "/api/tasks":
+                self._send_json(HTTPStatus.OK, {"tasks": self.server.state.tasks.recent()})
                 return
             if path == "/api/approvals":
                 query = parse_qs(urlsplit(self.path).query)
@@ -1406,6 +1824,9 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 return
             if len(parts) == 3 and parts[:2] == ["api", "threads"]:
                 self._send_json(HTTPStatus.OK, self.server.state.threads.read(parts[2]))
+                return
+            if len(parts) == 3 and parts[:2] == ["api", "sessions"]:
+                self._send_json(HTTPStatus.OK, self.server.state.session(parts[2]))
                 return
             if len(parts) == 4 and parts[:2] == ["api", "providers"] and parts[3] == "models":
                 query = parse_qs(urlsplit(self.path).query)
@@ -1427,8 +1848,43 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                     {"events": self.server.state.threads.events(parts[2], after=after)},
                 )
                 return
+            if len(parts) == 4 and parts[:2] == ["api", "sessions"]:
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    after = int(query.get("after", ["0"])[0])
+                except ValueError as exc:
+                    raise ValueError("after must be an integer.") from exc
+                if parts[3] == "events":
+                    self._send_json(
+                        HTTPStatus.OK,
+                        self.server.state.session_events(parts[2], after=after),
+                    )
+                    return
+                if parts[3] == "children":
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {"sessions": self.server.state.runtime_store.session_children(parts[2])},
+                    )
+                    return
+                if parts[3] == "report":
+                    self._send_json(HTTPStatus.OK, self.server.state.session_report(parts[2]))
+                    return
             if len(parts) == 3 and parts[:2] == ["api", "jobs"]:
                 self._send_json(HTTPStatus.OK, self.server.state.jobs.get(parts[2]))
+                return
+            if len(parts) == 3 and parts[:2] == ["api", "tasks"]:
+                self._send_json(HTTPStatus.OK, self.server.state.task(parts[2]))
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "events":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    after = int(query.get("after", ["0"])[0])
+                except ValueError as exc:
+                    raise ValueError("after must be an integer.") from exc
+                self._send_json(HTTPStatus.OK, self.server.state.task_events(parts[2], after=after))
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "stream":
+                self._stream_job_events(self.server.state.tasks, parts[2], "task")
                 return
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "events":
                 query = parse_qs(urlsplit(self.path).query)
@@ -1566,13 +2022,75 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(HTTPStatus.ACCEPTED, job)
                 return
+            if path == "/api/tasks":
+                task = self.server.state.tasks.submit(
+                    payload,
+                    correlation_id=self._correlation_id,
+                )
+                self._send_json(HTTPStatus.ACCEPTED, task)
+                return
             if path == "/api/settings":
                 self._send_json(HTTPStatus.OK, self.server.state.save_settings(payload))
                 return
             if path == "/api/threads":
                 self._send_json(HTTPStatus.CREATED, self.server.state.create_thread(payload))
                 return
+            if path == "/api/sessions":
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    self.server.state.create_session(
+                        payload,
+                        correlation_id=self._correlation_id,
+                    ),
+                )
+                return
             parts = [part for part in path.split("/") if part]
+            if len(parts) == 4 and parts[:2] == ["api", "sessions"]:
+                session_id, action = parts[2], parts[3]
+                if action == "spawn":
+                    self._send_json(
+                        HTTPStatus.CREATED,
+                        self.server.state.spawn_session(
+                            session_id,
+                            payload,
+                            correlation_id=self._correlation_id,
+                        ),
+                    )
+                    return
+                if action == "fork":
+                    unknown = sorted(set(payload) - {"source_turn_id", "actor_session_id"})
+                    if unknown:
+                        raise ValueError("Unknown session fork fields: " + ", ".join(unknown))
+                    self._send_json(
+                        HTTPStatus.CREATED,
+                        self.server.state.session_service.fork(
+                            session_id,
+                            source_turn_id=payload.get("source_turn_id"),
+                            actor_session_id=payload.get("actor_session_id"),
+                        ),
+                    )
+                    return
+                if action in {"cancel", "interrupt", "resume"}:
+                    unknown = sorted(set(payload) - {"actor_session_id"})
+                    if unknown:
+                        raise ValueError("Unknown session control fields: " + ", ".join(unknown))
+                    actor = payload.get("actor_session_id")
+                    if actor is not None and not isinstance(actor, str):
+                        raise ValueError("actor_session_id must be a string or null.")
+                    if action == "cancel":
+                        result = self.server.state.cancel_session(
+                            session_id, actor_session_id=actor
+                        )
+                    elif action == "interrupt":
+                        result = self.server.state.interrupt_session(
+                            session_id, actor_session_id=actor
+                        )
+                    else:
+                        result = self.server.state.resume_session(
+                            session_id, actor_session_id=actor
+                        )
+                    self._send_json(HTTPStatus.ACCEPTED, result)
+                    return
             if len(parts) == 4 and parts[:2] == ["api", "threads"]:
                 thread_id, action = parts[2], parts[3]
                 if action == "rename":
@@ -1606,6 +2124,15 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.ACCEPTED,
                     self.server.state.jobs.cancel(parts[2]),
                 )
+                return
+            if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] in {"cancel", "resume"}:
+                if payload:
+                    raise ValueError("Task control does not accept request fields.")
+                if parts[3] == "cancel":
+                    result = self.server.state.tasks.cancel(parts[2])
+                else:
+                    result = self.server.state.tasks.resume(parts[2])
+                self._send_json(HTTPStatus.ACCEPTED, result)
                 return
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "retry":
                 unknown = sorted(set(payload) - {"worker_id"})

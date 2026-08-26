@@ -151,6 +151,9 @@ class RuntimeStoreTests(unittest.TestCase):
             store = RuntimeStore(path)
             self.assertEqual(store.get_job("farm", "legacy-job")["status"], "COMPLETED")
             self.assertEqual(store.events("farm", "legacy-job")[0]["type"], "worker.completed")
+            migrated = store.session_events("legacy-job")
+            self.assertEqual([event["event_type"] for event in migrated], ["worker.completed"])
+            self.assertEqual(migrated[0]["legacy_sequence"], 1)
             store.append_event(
                 "farm",
                 "legacy-job",

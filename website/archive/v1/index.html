@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Agent Farm keeps premium models focused on planning and review while economical workers handle bounded execution."
+    />
+    <meta name="theme-color" content="#08090a" />
+    <title>Agent Farm — Spend premium tokens on judgment</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body data-energy="signal">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Agent Farm home">
+        <img
+          src="./assets/agent-farm-brand/agent-farm-512x512.png"
+          alt=""
+          width="28"
+          height="28"
+        />
+        <span>Agent Farm</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#demo">Demo</a>
+        <a href="#product">Product</a>
+        <a href="#how">How it works</a>
+      </nav>
+
+      <a class="nav-action" href="../releases/v0.5.0.9/">Windows preview</a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-mesh" aria-hidden="true">
+          <div class="mesh-glow"></div>
+          <div class="mesh-ring mesh-ring-a"></div>
+          <div class="mesh-ring mesh-ring-b"></div>
+        </div>
+
+        <div class="hero-copy reveal">
+          <div class="eyebrow"><span></span> THE TOKEN COST PROBLEM</div>
+          <h1 id="hero-title">
+            Stop burning<br />premium tokens<br /><em>on routine work.</em>
+          </h1>
+          <p>
+            Keep your strongest model for planning and review. Route bounded execution to economical
+            Workers.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#demo">
+              Play the demo
+              <span aria-hidden="true">↓</span>
+            </a>
+            <a class="button button-secondary" href="../releases/v0.5.0.9/">Get the preview</a>
+          </div>
+          <div class="hero-footnote">
+            <span>LOCAL-FIRST</span>
+            <span>MULTI-PROVIDER</span>
+            <span>REVIEWABLE</span>
+          </div>
+        </div>
+
+        <div class="routing-visual reveal" aria-label="Conceptual comparison of model routing">
+          <div class="routing-head">
+            <span>MODEL ROUTING / CONCEPT</span>
+            <span>NO SAVINGS ESTIMATE</span>
+          </div>
+
+          <div class="routing-row routing-row-old">
+            <div class="routing-label">
+              <span>WITHOUT ROUTING</span>
+              <strong>Premium model does everything</strong>
+            </div>
+            <div class="token-line token-line-premium" aria-hidden="true">
+              <span>SEARCH</span>
+              <span>READ</span>
+              <span>EDIT</span>
+              <span>TEST</span>
+              <span>JUDGE</span>
+            </div>
+            <div class="route-note">PREMIUM TOKENS CROSS THE FULL PIPELINE</div>
+          </div>
+
+          <div class="routing-divider">
+            <span>AGENT FARM SPLITS JUDGMENT FROM EXECUTION</span>
+          </div>
+
+          <div class="routing-row routing-row-new">
+            <div class="routing-label">
+              <span>WITH AGENT FARM</span>
+              <strong>Capability goes where it matters</strong>
+            </div>
+            <div class="split-route" aria-hidden="true">
+              <div class="supervisor-route">
+                <div class="route-node node-supervisor">S</div>
+                <div>
+                  <strong>SUPERVISOR</strong>
+                  <span>PLAN / JUDGE</span>
+                </div>
+              </div>
+              <div class="route-branch">
+                <i class="branch-packet packet-one"></i>
+                <i class="branch-packet packet-two"></i>
+                <i class="branch-packet packet-three"></i>
+              </div>
+              <div class="worker-route">
+                <div><i>W1</i><span>SEARCH</span></div>
+                <div><i>W2</i><span>EDIT</span></div>
+                <div><i>W3</i><span>TEST</span></div>
+              </div>
+            </div>
+            <div class="route-note route-note-brand">PREMIUM CAPABILITY STAYS AT THE DECISION LAYER</div>
+          </div>
+        </div>
+
+        <div class="hero-scroll" aria-hidden="true">SCROLL / DEMO</div>
+      </section>
+
+      <section class="principle-strip" id="how" aria-label="Agent Farm principles">
+        <div><span>01</span><strong>Plan with the best</strong></div>
+        <div><span>02</span><strong>Execute economically</strong></div>
+        <div><span>03</span><strong>Accept only evidence</strong></div>
+      </section>
+
+      <section class="demo-section" id="demo" aria-labelledby="demo-title">
+        <div class="section-heading reveal">
+          <div class="eyebrow">INTERACTIVE LOCAL DEMO</div>
+          <h2 id="demo-title">Watch one request become<br />a controlled farm run.</h2>
+          <p>Simulated in your browser. No backend call and no usage claim.</p>
+        </div>
+
+        <div class="demo-shell reveal" data-phase="0">
+          <div class="demo-titlebar">
+            <div class="demo-brand">
+              <img
+                src="./assets/agent-farm-brand/agent-farm-512x512.png"
+                alt=""
+                width="20"
+                height="20"
+              />
+              <span>AGENT FARM / FLOW DEMO</span>
+            </div>
+            <div class="demo-status"><i></i><span id="demo-status">READY</span></div>
+          </div>
+
+          <div class="demo-layout">
+            <div class="demo-request">
+              <label for="demo-prompt">REQUEST</label>
+              <textarea id="demo-prompt" rows="5">Review this repository startup path. Map it, implement one focused reliability fix, and add regression tests.</textarea>
+              <div class="demo-request-meta">
+                <span>3 BOUNDED WORKERS</span>
+                <span>ISOLATED WORKTREES</span>
+              </div>
+              <button class="demo-play button button-primary" type="button">
+                <span class="play-icon" aria-hidden="true">▶</span>
+                <span class="play-label">Run demo</span>
+              </button>
+            </div>
+
+            <div class="demo-stage" aria-live="polite">
+              <div class="demo-stage-head">
+                <span id="phase-counter">PHASE 01 / 05</span>
+                <strong id="phase-title">Request ready</strong>
+              </div>
+
+              <div class="farm-flow" aria-label="Demo execution flow">
+                <div class="flow-supervisor">
+                  <div class="flow-node">S</div>
+                  <div><strong>SUPERVISOR</strong><span>PLAN + REVIEW</span></div>
+                </div>
+                <div class="flow-trunk" aria-hidden="true"><i></i></div>
+                <div class="flow-workers">
+                  <div class="flow-worker" data-worker="1"><i>W1</i><span>MAP</span><b></b></div>
+                  <div class="flow-worker" data-worker="2"><i>W2</i><span>BUILD</span><b></b></div>
+                  <div class="flow-worker" data-worker="3"><i>W3</i><span>TEST</span><b></b></div>
+                </div>
+                <div class="evidence-gate">
+                  <span>EVIDENCE GATE</span>
+                  <strong>PATCH / TESTS / SCOPE</strong>
+                </div>
+              </div>
+
+              <div class="phase-track" aria-hidden="true">
+                <i></i>
+                <i></i>
+                <i></i>
+                <i></i>
+                <i></i>
+              </div>
+            </div>
+
+            <div class="demo-activity">
+              <div class="activity-head">
+                <span>ACTIVITY</span>
+                <span>SIMULATED</span>
+              </div>
+              <ol>
+                <li data-log="0"><span>00</span><p>Request is ready for planning.</p></li>
+                <li data-log="1"><span>01</span><p>Supervisor defines roles and boundaries.</p></li>
+                <li data-log="2"><span>02</span><p>Workers execute in isolated worktrees.</p></li>
+                <li data-log="3"><span>03</span><p>Patch, tests, and scope evidence collected.</p></li>
+                <li data-log="4"><span>04</span><p>Review package is ready for judgment.</p></li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="demo-controls">
+            <button class="demo-restart" type="button">RESTART</button>
+            <input
+              id="demo-scrubber"
+              type="range"
+              min="0"
+              max="4"
+              step="1"
+              value="0"
+              aria-label="Demo phase"
+            />
+            <span id="demo-time">00:00 / 00:08</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="product-section" id="product" aria-labelledby="product-title">
+        <div class="product-copy reveal">
+          <div class="eyebrow">REAL LOCAL PRODUCT CAPTURE</div>
+          <h2 id="product-title">A native command center.<br />Not another browser tab.</h2>
+          <p>WinUI workspace. Local daemon. Task history redacted in this capture.</p>
+        </div>
+
+        <figure class="product-capture reveal">
+          <div class="capture-frame">
+            <img
+              src="./assets/agent-farm-brand/agent-farm-ui-scrubbed.png"
+              alt="Agent Farm native Windows workspace showing the new task composer and execution panel"
+              width="3200"
+              height="1904"
+              loading="lazy"
+            />
+          </div>
+          <figcaption>
+            <span>AGENT FARM / NATIVE WINDOWS PREVIEW</span>
+            <span>LOCAL CAPTURE / TASK DATA REDACTED</span>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="closing" aria-labelledby="closing-title">
+        <img
+          src="./assets/agent-farm-brand/agent-farm-512x512.png"
+          alt=""
+          width="64"
+          height="64"
+        />
+        <div>
+          <div class="eyebrow">AGENT FARM / WINDOWS PREVIEW</div>
+          <h2 id="closing-title">Spend capability<br />where capability matters.</h2>
+        </div>
+        <a class="button button-primary" href="../releases/v0.5.0.9/">Get the local preview</a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>AGENT FARM</span>
+      <span>SUPERVISOR + ECONOMICAL WORKERS</span>
+      <span>LOCAL PROTOTYPE / NOT DEPLOYED</span>
+    </footer>
+
+    <button
+      class="tweaks-trigger"
+      type="button"
+      aria-expanded="false"
+      aria-controls="tweaks-panel"
+    >
+      TWEAKS
+    </button>
+    <aside class="tweaks-panel" id="tweaks-panel" aria-hidden="true">
+      <div class="tweaks-heading">
+        <strong>Tweaks</strong>
+        <button class="tweaks-close" type="button" aria-label="Close Tweaks">×</button>
+      </div>
+      <label for="energy-mode">Hero energy</label>
+      <select id="energy-mode">
+        <option value="quiet">Quiet</option>
+        <option value="signal" selected>Signal</option>
+        <option value="cinematic">Cinematic</option>
+      </select>
+      <label for="demo-speed">Demo pace</label>
+      <select id="demo-speed">
+        <option value="2200">Slow</option>
+        <option value="1600" selected>Normal</option>
+        <option value="950">Fast</option>
+      </select>
+    </aside>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

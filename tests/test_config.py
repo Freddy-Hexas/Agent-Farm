@@ -123,6 +123,30 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.worker_provider, "legacy-provider")
         self.assertEqual(config.worker_reasoning_effort, "low")
 
+    def test_legacy_backend_populates_role_harnesses_and_profile_can_override_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / CONFIG_FILE).write_text(
+                json.dumps(
+                    {
+                        "agent_backend": "codex",
+                        "worker_profiles": {
+                            "cheap": {
+                                "harness": "native",
+                                "model": "cheap-model",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = load_config(root)
+            resolved, _ = resolve_worker_profile(config, "cheap")
+
+        self.assertEqual(config.supervisor_harness, "codex")
+        self.assertEqual(config.worker_harness, "codex")
+        self.assertEqual(resolved.worker_harness, "native")
+
     def test_legacy_codex_override_is_migrated_and_newer_schema_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

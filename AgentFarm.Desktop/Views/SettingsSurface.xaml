@@ -119,13 +119,28 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
-                                    <ComboBox x:Name="SupervisorProviderCombo" x:Uid="SupervisorProvider" AutomationProperties.AutomationId="SupervisorProviderCombo" AutomationProperties.Name="Supervisor provider" Header="Provider" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.ProviderOptions, Mode=OneWay}" SelectedValuePath="Id" SelectionChanged="OnSupervisorProviderSelectionChanged" />
-                                    <ComboBox x:Name="SupervisorModelCombo" x:Uid="SupervisorModel" AutomationProperties.AutomationId="SupervisorModelCombo" AutomationProperties.Name="Supervisor model" Grid.Column="1" Header="Model" DisplayMemberPath="DisplayName" ItemsSource="{x:Bind ViewModel.SupervisorModels, Mode=OneWay}" SelectedValuePath="Id" SelectionChanged="OnSupervisorModelSelectionChanged" />
-                                    <TextBox x:Name="SupervisorCustomModelBox" x:Uid="SupervisorCustomModel" AutomationProperties.AutomationId="SupervisorCustomModelBox" AutomationProperties.Name="Supervisor custom model ID" Grid.Row="1" Header="Custom model ID" PlaceholderText="Use when the provider has no catalog" />
-                                    <ComboBox x:Name="SupervisorThinkingCombo" x:Uid="SupervisorThinking" AutomationProperties.AutomationId="SupervisorThinkingCombo" AutomationProperties.Name="Supervisor thinking mode" Grid.Row="1" Grid.Column="1" Header="Thinking" ItemsSource="{x:Bind ViewModel.SupervisorThinkingOptions, Mode=OneWay}" />
-                                    <ComboBox x:Name="SupervisorEffortCombo" x:Uid="SupervisorEffort" AutomationProperties.AutomationId="SupervisorEffortCombo" AutomationProperties.Name="Supervisor reasoning effort" Grid.Row="2" Grid.ColumnSpan="2" Header="Reasoning effort" ItemsSource="{x:Bind ViewModel.SupervisorEffortOptions, Mode=OneWay}" />
+                                    <ComboBox x:Name="SupervisorHarnessCombo" AutomationProperties.AutomationId="SupervisorHarnessCombo" AutomationProperties.Name="Supervisor harness" Header="Harness" DisplayMemberPath="DisplayName" ItemsSource="{x:Bind ViewModel.HarnessOptions, Mode=OneWay}" SelectedValuePath="Id" Grid.ColumnSpan="2" />
+                                    <ComboBox x:Name="SupervisorProviderCombo" x:Uid="SupervisorProvider" AutomationProperties.AutomationId="SupervisorProviderCombo" AutomationProperties.Name="Supervisor provider" Header="Provider" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.ProviderOptions, Mode=OneWay}" SelectedValuePath="Id" Grid.Row="1" SelectionChanged="OnSupervisorProviderSelectionChanged" />
+                                    <ComboBox x:Name="SupervisorModelCombo" x:Uid="SupervisorModel" AutomationProperties.AutomationId="SupervisorModelCombo" AutomationProperties.Name="Supervisor model" Grid.Row="1" Grid.Column="1" Header="Model" DisplayMemberPath="DisplayName" ItemsSource="{x:Bind ViewModel.SupervisorModels, Mode=OneWay}" SelectedValuePath="Id" SelectionChanged="OnSupervisorModelSelectionChanged" />
+                                    <TextBox x:Name="SupervisorCustomModelBox" x:Uid="SupervisorCustomModel" AutomationProperties.AutomationId="SupervisorCustomModelBox" AutomationProperties.Name="Gateway model ID" Grid.Row="2" Grid.ColumnSpan="2" Header="Model ID (gateway)" PlaceholderText="Enter an exact ID, for example openai/gpt-5.5 or anthropic/claude-sonnet-4.5" TextChanged="OnSupervisorCustomModelChanged" />
+                                    <ComboBox x:Name="SupervisorThinkingCombo" x:Uid="SupervisorThinking" AutomationProperties.AutomationId="SupervisorThinkingCombo" AutomationProperties.Name="Supervisor thinking mode" Grid.Row="3" Header="Thinking" ItemsSource="{x:Bind ViewModel.SupervisorThinkingOptions, Mode=OneWay}" />
+                                    <ComboBox x:Name="SupervisorEffortCombo" x:Uid="SupervisorEffort" AutomationProperties.AutomationId="SupervisorEffortCombo" AutomationProperties.Name="Supervisor reasoning effort" Grid.Row="3" Grid.Column="1" Header="Reasoning effort" ItemsSource="{x:Bind ViewModel.SupervisorEffortOptions, Mode=OneWay}" />
                                 </Grid>
+                                <StackPanel Margin="0,2,0,0" Spacing="3">
+                                    <CheckBox
+                                        x:Name="NetworkAccessCheckBox"
+                                        AutomationProperties.AutomationId="NetworkAccessCheckBox"
+                                        AutomationProperties.Name="Allow public web research"
+                                        Content="Allow public web research" />
+                                    <TextBlock
+                                        Margin="30,0,0,0"
+                                        FontSize="{StaticResource SmallFontSize}"
+                                        Foreground="{ThemeResource MutedTextBrush}"
+                                        Text="Workers can use web search and fetch public pages when a task needs current information. Local and private addresses remain blocked."
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -176,6 +191,7 @@
                                     <StackPanel x:Name="WorkerProfileEditorPanel" Grid.Column="1" Spacing="10">
                                         <TextBox Header="Route ID" IsReadOnly="True" Text="{Binding Name, Mode=OneWay}" />
                                         <TextBox Header="Display name" Text="{Binding DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <ComboBox x:Name="WorkerHarnessCombo" AutomationProperties.AutomationId="WorkerHarnessCombo" AutomationProperties.Name="Worker harness" Header="Harness" DisplayMemberPath="DisplayName" ItemsSource="{x:Bind ViewModel.HarnessOptions, Mode=OneWay}" SelectedValuePath="Id" SelectedValue="{Binding Harness, Mode=TwoWay}" />
                                         <Grid ColumnSpacing="10">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -184,7 +200,7 @@
                                             <ComboBox x:Name="WorkerProviderCombo" AutomationProperties.AutomationId="WorkerProviderCombo" AutomationProperties.Name="Worker provider" Header="Provider" DisplayMemberPath="Name" ItemsSource="{x:Bind ViewModel.ProviderOptions, Mode=OneWay}" SelectedValuePath="Id" SelectionChanged="OnWorkerProviderSelectionChanged" />
                                             <ComboBox x:Name="WorkerModelCombo" AutomationProperties.AutomationId="WorkerModelCombo" AutomationProperties.Name="Worker model" Grid.Column="1" Header="Model" DisplayMemberPath="DisplayName" ItemsSource="{x:Bind ViewModel.WorkerModels, Mode=OneWay}" SelectedValuePath="Id" SelectionChanged="OnWorkerModelSelectionChanged" />
                                         </Grid>
-                                        <TextBox x:Name="WorkerCustomModelBox" AutomationProperties.AutomationId="WorkerCustomModelBox" AutomationProperties.Name="Worker custom model ID" Header="Custom model ID" PlaceholderText="Use when the provider has no catalog" />
+                                        <TextBox x:Name="WorkerCustomModelBox" AutomationProperties.AutomationId="WorkerCustomModelBox" AutomationProperties.Name="Gateway model ID" Header="Model ID (gateway)" PlaceholderText="Enter an exact model ID when using a compatible gateway" TextChanged="OnWorkerCustomModelChanged" />
                                         <Grid ColumnSpacing="10">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />

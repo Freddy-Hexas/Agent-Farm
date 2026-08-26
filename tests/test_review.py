@@ -49,6 +49,17 @@ class MachineReviewTests(unittest.TestCase):
         self.assertEqual(review.status, "passed")
         self.assertTrue(any(f.code == "no_orchestrator_tests" for f in review.findings))
 
+    def test_allows_empty_diff_for_analysis_worker(self):
+        review = run_machine_review(
+            AgentFarmConfig(allowed_paths=["src/**"], test_commands=[]),
+            [],
+            "",
+            [],
+            allow_no_changes=True,
+        )
+        self.assertEqual(review.status, "passed")
+        self.assertTrue(any(f.code == "no_changes_allowed" for f in review.findings))
+
     def test_failed_test_rejects(self):
         config = AgentFarmConfig(test_commands=["python -m unittest"])
         tests = [

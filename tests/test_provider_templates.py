@@ -64,6 +64,15 @@ class ProviderTemplateTests(unittest.TestCase):
         self.assertEqual(templates["anthropic"]["reasoning"]["thinking"], ["enabled", "disabled"])
         self.assertEqual(templates["doubao"]["reasoning"], {"efforts": [], "thinking": []})
 
+    def test_custom_compatible_template_is_a_live_universal_gateway(self) -> None:
+        template = next(item for item in provider_templates() if item["id"] == "custom-openai-compatible")
+        self.assertEqual(template["model_catalog"], {"mode": "live", "parser": "openai", "manual": True})
+        self.assertEqual(
+            template["reasoning"]["efforts"],
+            ["none", "default", "minimal", "low", "medium", "high", "xhigh", "max"],
+        )
+        self.assertEqual(template["reasoning"]["thinking"], ["enabled", "disabled"])
+
 
 if __name__ == "__main__":
     unittest.main()

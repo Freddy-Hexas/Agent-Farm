@@ -1,6 +1,6 @@
 # Current limitations
 
-This list is synchronized with Agent Farm 0.5.0.9.
+This list is synchronized with Agent Farm 0.5.0.13.
 
 - The checked-in preview MSIX is development-signed and requires manual certificate trust. The
   production workflow is implemented, but the project owner must supply a CA-issued certificate and
@@ -11,8 +11,9 @@ This list is synchronized with Agent Farm 0.5.0.9.
 - Secure execution of repository code in the default `workspace-write` mode requires Docker Desktop
   and the corresponding language image to be available locally. Image acquisition depends on the
   user's registry and network configuration.
-- Provider model catalogs, reasoning controls, token usage, and error semantics vary. A vendor that
-  implements only part of an OpenAI-compatible API may need a custom route or adapter.
+- Provider model catalogs, reasoning controls, token usage, and error semantics vary. Compatible
+  gateways are queried through `GET /models` and keep a manual Model ID fallback; a gateway that
+  implements only part of the OpenAI-compatible request contract may still need its own adapter.
 - Pricing estimates depend on the maintained pricing catalog and provider-reported token usage; a
   provider invoice remains authoritative.
 - Public web extraction cannot bypass logins, paywalls, anti-bot pages, robots restrictions, or

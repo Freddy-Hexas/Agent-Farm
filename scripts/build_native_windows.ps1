@@ -10,9 +10,24 @@ $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $desktopProject = Join-Path $projectRoot "AgentFarm.Desktop\AgentFarm.Desktop.csproj"
 $workflow = Join-Path $env:USERPROFILE ".codex\plugins\cache\microsoft-winui\winui\0.3.0\skills\winui-dev-workflow\BuildAndRun.ps1"
-$runtimeOutput = Join-Path $projectRoot "AgentFarm.Desktop\bin\$Platform\$Configuration\net10.0-windows10.0.26100.0\win-$($Platform.ToLowerInvariant())"
+$runtimeOutput = Join-Path $projectRoot "AgentFarm.Desktop\bin\$Platform\$Configuration\net8.0-windows10.0.26100.0\win-$($Platform.ToLowerInvariant())"
 $backendTarget = Join-Path $runtimeOutput "Backend"
 $appxBackendTarget = Join-Path $runtimeOutput "AppX\Backend"
+
+$pythonCandidates = @(
+    (Join-Path $projectRoot ".venv\Scripts\python.exe"),
+    (Join-Path $projectRoot "venv\Scripts\python.exe"),
+    (Join-Path $env:USERPROFILE "miniconda3\python.exe"),
+    (Join-Path $env:USERPROFILE "anaconda3\python.exe")
+)
+$pathPython = Get-Command python.exe -ErrorAction SilentlyContinue
+if ($pathPython -and $pathPython.Source -notmatch "WindowsApps") {
+    $pythonCandidates += $pathPython.Source
+}
+$python = $pythonCandidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+if (-not $python) {
+    throw "A usable Python interpreter was not found. Install Python 3.11 or newer or activate the project environment."
+}
 
 if ($Configuration -eq "Release" -and (Test-Path -LiteralPath $backendTarget)) {
     $resolvedOutput = [IO.Path]::GetFullPath($runtimeOutput).TrimEnd('\') + '\'
@@ -26,7 +41,7 @@ if ($Configuration -eq "Release" -and (Test-Path -LiteralPath $backendTarget)) {
 if ($Configuration -eq "Release" -and -not $SkipBackend) {
     Push-Location $projectRoot
     try {
-        python -m PyInstaller --noconfirm --clean "packaging\AgentFarmBackend.spec"
+        & $python -m PyInstaller --noconfirm --clean "packaging\AgentFarmBackend.spec"
         if ($LASTEXITCODE -ne 0) {
             throw "The Agent Farm backend build failed."
         }

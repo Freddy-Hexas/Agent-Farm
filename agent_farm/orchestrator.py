@@ -13,11 +13,22 @@ from .git_ops import (
     apply_patch,
     collect_changed_files,
     collect_patch,
+    create_workspace_snapshot,
     create_worktree,
     find_repo_root,
     is_worktree_dirty,
     remove_worktree,
     resolve_ref,
+)
+from .harnesses import (
+    build_registry,
+    decorate_event,
+    effective_harness,
+    effective_provider,
+    event_metadata,
+    normalized_external_events,
+    required_capabilities,
+    route_id,
 )
 from .models import AgentFarmConfig, RunPaths, TaskStatus, TestResult
 from .native_agent import run_native_worker
@@ -38,38 +49,58 @@ class OrchestratorCancelled(OrchestratorError):
 def run_codex_worker(**kwargs):
     """Dispatch through the selected harness; name retained for API compatibility."""
     config = kwargs["config"]
-    if config.agent_backend == "codex":
-        callback = kwargs.pop("event_callback", None)
+    harness_id = effective_harness(config, "worker")
+    callback = kwargs.pop("event_callback", None)
+    paths = kwargs["paths"]
+    model = kwargs.get("model") or config.worker_model
+    metadata = event_metadata(
+        config,
+        "worker",
+        provider=effective_provider(config, "worker"),
+        model=model,
+        session_id=paths.run_dir.name,
+    )
+    registry = build_registry(
+        config,
+        native_runner=run_native_worker,
+        codex_runner=run_legacy_codex_worker,
+    )
+    if harness_id == "codex":
+        registry.require(
+            harness_id,
+            required_capabilities=required_capabilities(config, "worker"),
+        )
         kwargs.pop("approval_callback", None)
         kwargs.pop("cancel_check", None)
         kwargs.pop("model_attachments", None)
         kwargs.pop("usage_context", None)
-        if callback is not None:
-            callback(
-                {
-                    "type": "agent.started",
-                    "provider": "openai",
-                    "model": kwargs.get("model") or config.worker_model,
-                    "backend": "codex",
-                }
+        kwargs.pop("event_callback", None)
+        raw_events = paths.worker_raw_events_file
+        kwargs["events_file"] = raw_events
+        try:
+            result = registry.run(
+                harness_id,
+                required_capabilities=required_capabilities(config, "worker"),
+                **kwargs,
             )
-        result = run_legacy_codex_worker(**kwargs)
-        if callback is not None:
-            if result.stdout:
-                callback(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": result.stdout[-24_000:]},
-                    }
-                )
-            callback(
-                {
-                    "type": "agent.completed" if result.ok else "agent.failed",
-                    "error": result.stderr if not result.ok else None,
-                }
+        finally:
+            normalized_external_events(
+                raw_path=raw_events,
+                output_path=paths.worker_events_file,
+                metadata={**metadata, "backend": "codex"},
+                callback=callback,
+                leading_event="agent.started",
+                trailing_event="agent.completed" if 'result' in locals() and result.ok else "agent.failed",
             )
         return result
-    return run_native_worker(**kwargs)
+    if callback is not None:
+        kwargs["event_callback"] = lambda event: callback(decorate_event(event, metadata))
+    kwargs["event_metadata"] = metadata
+    return registry.run(
+        harness_id,
+        required_capabilities=required_capabilities(config, "worker"),
+        **kwargs,
+    )
 
 
 def _repo_relative(repo_root: Path, path: Path) -> str:
@@ -139,6 +170,9 @@ def _write_state(
         "worktree": str(paths.worktree),
         "run_dir": str(paths.run_dir),
         "config": config.to_json(),
+        "role": "worker",
+        "harness_id": effective_harness(config, "worker"),
+        "route_id": route_id(effective_provider(config, "worker"), config.worker_model),
     }
     if extra:
         payload.update(extra)
@@ -277,6 +311,8 @@ def run_task(
     attachment_context: str = "",
     model_attachments: list[dict[str, str]] | None = None,
     usage_context: dict[str, Any] | None = None,
+    allow_no_changes: bool = False,
+    snapshot_workspace: bool = True,
 ) -> dict[str, Any]:
     repo_root = find_repo_root(repo)
     base_config, selected_profile = resolve_worker_profile(
@@ -298,6 +334,13 @@ def run_task(
         codex_profile_v2=codex_profile_v2,
     )
     base_commit = resolve_ref(repo_root, base_ref)
+    if snapshot_workspace:
+        base_commit = create_workspace_snapshot(
+            repo_root,
+            base_commit,
+            include_paths=config.allowed_paths,
+            forbidden_paths=config.forbidden_paths,
+        )
     task_id = task_id_override or make_task_id(task_file)
     run_dir = (repo_root / config.runs_dir / task_id).resolve()
     worktree = (repo_root / config.worktrees_dir / task_id).resolve()
@@ -379,11 +422,20 @@ def run_task(
         config=config,
         extra={
             "worker": {
-                "backend": config.agent_backend,
+                "backend": effective_harness(config, "worker"),
+                "harness_id": effective_harness(config, "worker"),
+                "route_id": route_id(effective_provider(config, "worker"), config.worker_model),
+                "provider_id": effective_provider(config, "worker") or "unconfigured",
+                "model_id": config.worker_model or "unconfigured",
                 "profile": selected_profile,
                 "returncode": worker_result.returncode,
                 "timed_out": worker_result.timed_out,
                 "events_file": str(paths.worker_events_file),
+                "raw_events_file": (
+                    str(paths.worker_raw_events_file)
+                    if paths.worker_raw_events_file.is_file()
+                    else None
+                ),
                 "stderr_file": str(paths.worker_stderr_file),
                 "final_file": str(paths.worker_final_file),
             }
@@ -405,8 +457,11 @@ def run_task(
         config,
         cancel_check,
     )
-    changed_files = collect_changed_files(worktree)
-    patch = collect_patch(worktree)
+    changed_files = collect_changed_files(
+        worktree,
+        include_ignored_paths=config.allowed_paths,
+    )
+    patch = collect_patch(worktree, include_ignored_paths=config.allowed_paths)
     # Git binary patches require LF-preserving payload lines on Windows.
     paths.patch_file.write_text(patch, encoding="utf-8", newline="")
     worker_failure = None
@@ -421,6 +476,7 @@ def run_task(
         test_results,
         worker_ok=worker_failure is None,
         worker_failure_message=worker_failure,
+        allow_no_changes=allow_no_changes,
     )
 
     final_status = (
@@ -430,10 +486,19 @@ def run_task(
     )
     payload = {
         "worker": {
+            "harness_id": effective_harness(config, "worker"),
+            "route_id": route_id(effective_provider(config, "worker"), config.worker_model),
+            "provider_id": effective_provider(config, "worker") or "unconfigured",
+            "model_id": config.worker_model or "unconfigured",
             "profile": selected_profile,
             "returncode": worker_result.returncode,
             "timed_out": worker_result.timed_out,
             "events_file": str(paths.worker_events_file),
+            "raw_events_file": (
+                str(paths.worker_raw_events_file)
+                if paths.worker_raw_events_file.is_file()
+                else None
+            ),
             "stderr_file": str(paths.worker_stderr_file),
             "final_file": str(paths.worker_final_file),
         },
@@ -441,6 +506,8 @@ def run_task(
         "patch_file": str(paths.patch_file),
         "tests": [item.to_json() for item in test_results],
         "machine_review": machine_review.to_json(),
+        "session_id": paths.run_dir.name,
+        "stop_reason": "completed" if machine_review.passed else "blocked",
     }
     _write_state(
         paths,

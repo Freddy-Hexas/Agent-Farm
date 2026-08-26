@@ -100,6 +100,21 @@ def _runtime_summary(path: Path) -> dict[str, Any]:
                 "SELECT kind, status, COUNT(*) FROM runtime_jobs GROUP BY kind, status"
             ).fetchall()
             event_count = int(connection.execute("SELECT COUNT(*) FROM runtime_events").fetchone()[0])
+            session_table = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'runtime_sessions'"
+                ).fetchone()[0]
+            )
+            session_count = (
+                int(connection.execute("SELECT COUNT(*) FROM runtime_sessions").fetchone()[0])
+                if session_table
+                else 0
+            )
+            session_event_count = (
+                int(connection.execute("SELECT COUNT(*) FROM session_events").fetchone()[0])
+                if session_table
+                else 0
+            )
         return {
             "available": True,
             "schema_version": version,
@@ -108,6 +123,8 @@ def _runtime_summary(path: Path) -> dict[str, Any]:
                 for kind, status, count in rows
             ],
             "event_count": event_count,
+            "session_count": session_count,
+            "session_event_count": session_event_count,
         }
     except (OSError, sqlite3.Error) as exc:
         return {"available": False, "error": str(exc)}

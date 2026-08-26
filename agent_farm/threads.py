@@ -9,7 +9,10 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from .runtime_store import RuntimeStore
 
 
 THREAD_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{7,63}$")
@@ -30,10 +33,47 @@ def _clean_title(value: str) -> str:
 class ThreadStore:
     """Small, durable Thread/Turn/Item store for the local desktop runtime."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, runtime_store: "RuntimeStore | None" = None) -> None:
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._runtime_store = runtime_store
+        self._migrate_existing_threads()
+
+    def _migrate_existing_threads(self) -> None:
+        if self._runtime_store is None:
+            return
+        for path in self.root.glob("thread-*.json"):
+            try:
+                thread = json.loads(path.read_text(encoding="utf-8-sig"))
+                if not isinstance(thread, dict) or not isinstance(thread.get("thread_id"), str):
+                    continue
+                self._runtime_store.create_session(
+                    {
+                        "session_id": thread["thread_id"],
+                        "role": "thread",
+                        "thread_id": thread["thread_id"],
+                        "status": thread.get("status", "idle"),
+                        "created_at": thread.get("created_at") or _utc_now(),
+                        "updated_at": thread.get("updated_at") or _utc_now(),
+                    }
+                )
+                existing = self._runtime_store.session_events(thread["thread_id"], limit=5000)
+                raw_events = thread.get("events") if isinstance(thread.get("events"), list) else []
+                for event in raw_events[len(existing) :]:
+                    if isinstance(event, dict):
+                        self._runtime_store.append_session_event(
+                            thread["thread_id"],
+                            {
+                                **event,
+                                "event_type": event.get("type", "event"),
+                                "created_at": event.get("created_at") or _utc_now(),
+                                "session_id": thread["thread_id"],
+                                "thread_id": thread["thread_id"],
+                            },
+                        )
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
 
     def _path(self, thread_id: str) -> Path:
         if not THREAD_ID_PATTERN.fullmatch(thread_id):
@@ -78,8 +118,8 @@ class ThreadStore:
             self._write_unlocked(thread)
             return copy.deepcopy(thread), copy.deepcopy(result)
 
-    @staticmethod
     def _event(
+        self,
         thread: dict[str, Any],
         event_type: str,
         *,
@@ -98,6 +138,26 @@ class ThreadStore:
             "payload": payload or {},
         }
         events.append(event)
+        if self._runtime_store is not None:
+            self._runtime_store.create_session(
+                {
+                    "session_id": thread["thread_id"],
+                    "role": "thread",
+                    "thread_id": thread["thread_id"],
+                    "status": thread.get("status", "idle"),
+                    "created_at": thread.get("created_at") or event["created_at"],
+                }
+            )
+            self._runtime_store.append_session_event(
+                thread["thread_id"],
+                {
+                    **event,
+                    "event_type": event["type"],
+                    "created_at": event["created_at"],
+                    "session_id": thread["thread_id"],
+                    "thread_id": thread["thread_id"],
+                },
+            )
         return event
 
     def create(self, title: str) -> dict[str, Any]:
@@ -337,7 +397,32 @@ class ThreadStore:
         if type(after) is not int or after < 0:
             raise ValueError("after must be a non-negative integer.")
         thread = self.read(thread_id)
+        if self._runtime_store is not None:
+            try:
+                from .session_ledger import project_thread_from_events
+
+                ledger_events = self._runtime_store.session_events(thread_id, after=0)
+                projected = project_thread_from_events(thread, ledger_events)
+                return [
+                    event
+                    for event in projected.get("events", [])
+                    if event.get("sequence", 0) > after
+                ]
+            except FileNotFoundError:
+                pass
         return [event for event in thread.get("events", []) if event.get("sequence", 0) > after]
+
+    def rebuild(self, thread_id: str) -> dict[str, Any]:
+        """Rebuild the compatibility timeline from the durable session ledger."""
+        thread = self.read(thread_id)
+        if self._runtime_store is None:
+            return thread
+        from .session_ledger import project_thread_from_events
+
+        return project_thread_from_events(
+            thread,
+            self._runtime_store.session_events(thread_id, after=0),
+        )
 
     def find_by_farm(self, farm_id: str) -> tuple[str, str] | None:
         with self._lock:
